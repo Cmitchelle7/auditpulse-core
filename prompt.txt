@@ -1,0 +1,11 @@
+Task: Create AuditPulse CLI Engine
+
+1. Set up a TypeScript project structure under `src/`:
+   - `src/index.ts`: Entry point CLI accepting a file path.
+   - `src/types.ts`: Interface `IRulePlugin` with `name`, `description`, and `scan(code: string)` returning identified vulnerabilities.
+   - `src/plugins/uncheckedReturn.ts`: AST/regex plugin scanning for unhandled `.send()`, `.call()`, and `.delegatecall()` methods.
+   - `src/plugins/reentrancyCheck.ts`: Plugin detecting external calls before state variable assignments.
+
+2. In `src/index.ts`, iterate over all rules and output a formatted terminal report showing total warnings and line numbers.
+
+3. Create unit tests in `tests/scanner.test.ts` using Vitest to verify both plugins work on sample Solidity strings. Ensure all tests pass.
