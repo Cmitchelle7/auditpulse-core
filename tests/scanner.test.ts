@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import MissingRequireAuthPlugin from '../src/plugins/missingRequireAuth';
-import UnwrapUsagePlugin from '../src/plugins/unwrapUsage';
-import MissingExtendTtlPlugin from '../src/plugins/missingExtendTtl';
+import { describe, it, expect } from "vitest";
+import MissingRequireAuthPlugin from "../src/plugins/missingRequireAuth";
+import UnwrapUsagePlugin from "../src/plugins/unwrapUsage";
+import MissingExtendTtlPlugin from "../src/plugins/missingExtendTtl";
 
-describe('AuditPulse Scanner Tests (Soroban)', () => {
-  describe('MissingRequireAuthPlugin', () => {
-    it('should detect token transfer without require_auth', () => {
+describe("AuditPulse Scanner Tests (Soroban)", () => {
+  describe("MissingRequireAuthPlugin", () => {
+    it("should detect token transfer without require_auth", () => {
       const code = `
         fn withdraw(env: Env, to: Address, amount: i128) {
           let client = token::Client::new(&env, &token_id);
@@ -15,11 +15,11 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('require_auth');
-      expect(vulnerabilities[0]?.severity).toBe('critical');
+      expect(vulnerabilities[0]?.message).toContain("require_auth");
+      expect(vulnerabilities[0]?.severity).toBe("critical");
     });
 
-    it('should detect balance update without require_auth', () => {
+    it("should detect balance update without require_auth", () => {
       const code = `
         fn debit(env: Env, user: Address, amount: i128) {
           let mut balances = get_balances(env.clone());
@@ -29,10 +29,10 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.severity).toBe('critical');
+      expect(vulnerabilities[0]?.severity).toBe("critical");
     });
 
-    it('should not flag functions with require_auth', () => {
+    it("should not flag functions with require_auth", () => {
       const code = `
         fn withdraw(env: Env, to: Address, amount: i128) {
           env.require_auth(&to);
@@ -45,7 +45,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag functions with require_auth_for_args', () => {
+    it("should not flag functions with require_auth_for_args", () => {
       const code = `
         fn swap(env: Env, args: Vec<Val>) {
           env.require_auth_for_args(&user, &args);
@@ -57,7 +57,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag functions without auth-sensitive operations', () => {
+    it("should not flag functions without auth-sensitive operations", () => {
       const code = `
         fn name(env: Env) -> String {
           env.storage().instance().get(&NAME).unwrap_or_default()
@@ -68,7 +68,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should handle multiple functions independently', () => {
+    it("should handle multiple functions independently", () => {
       const code = `
         fn safe_transfer(env: Env, to: Address, amount: i128) {
           env.require_auth(&to);
@@ -82,12 +82,12 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBe(1);
-      expect(vulnerabilities[0]?.message).toContain('unsafe_transfer');
+      expect(vulnerabilities[0]?.message).toContain("unsafe_transfer");
     });
   });
 
-  describe('UnwrapUsagePlugin', () => {
-    it('should detect direct .unwrap()', () => {
+  describe("UnwrapUsagePlugin", () => {
+    it("should detect direct .unwrap()", () => {
       const code = `
         fn balance(env: Env, user: Address) -> i128 {
           env.storage().persistent().get(&user).unwrap()
@@ -96,11 +96,11 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('.unwrap()');
-      expect(vulnerabilities[0]?.severity).toBe('high');
+      expect(vulnerabilities[0]?.message).toContain(".unwrap()");
+      expect(vulnerabilities[0]?.severity).toBe("high");
     });
 
-    it('should detect .expect()', () => {
+    it("should detect .expect()", () => {
       const code = `
         fn admin(env: Env) -> Address {
           env.storage().instance().get(&ADMIN).expect("admin not set")
@@ -109,10 +109,10 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('.expect()');
+      expect(vulnerabilities[0]?.message).toContain(".expect()");
     });
 
-    it('should detect panic!()', () => {
+    it("should detect panic!()", () => {
       const code = `
         fn do_thing(env: Env) {
           if bad {
@@ -123,10 +123,10 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('panic!');
+      expect(vulnerabilities[0]?.message).toContain("panic!");
     });
 
-    it('should not flag ?-based error propagation', () => {
+    it("should not flag ?-based error propagation", () => {
       const code = `
         fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), ContractError> {
           client.transfer(&to, &amount)?;
@@ -138,7 +138,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag commented code', () => {
+    it("should not flag commented code", () => {
       const code = `
         // fn balance(env: Env) -> i128 {
         //   env.storage().persistent().get(&user).unwrap()
@@ -150,8 +150,8 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
     });
   });
 
-  describe('MissingExtendTtlPlugin', () => {
-    it('should detect storage access without extend_ttl', () => {
+  describe("MissingExtendTtlPlugin", () => {
+    it("should detect storage access without extend_ttl", () => {
       const code = `
         fn save(env: Env, key: Symbol, value: i128) {
           env.storage().persistent().set(&key, &value);
@@ -160,11 +160,11 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
 
       const vulnerabilities = MissingExtendTtlPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('extend_ttl');
-      expect(vulnerabilities[0]?.severity).toBe('high');
+      expect(vulnerabilities[0]?.message).toContain("extend_ttl");
+      expect(vulnerabilities[0]?.severity).toBe("high");
     });
 
-    it('should not flag storage access with extend_ttl', () => {
+    it("should not flag storage access with extend_ttl", () => {
       const code = `
         fn save(env: Env, key: Symbol, value: i128) {
           env.storage().persistent().set(&key, &value);
@@ -176,7 +176,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag extend_ttl_to_threshold usage', () => {
+    it("should not flag extend_ttl_to_threshold usage", () => {
       const code = `
         fn save(env: Env, key: Symbol, value: i128) {
           env.storage().persistent().set(&key, &value);
@@ -188,7 +188,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag contracts that do not touch storage', () => {
+    it("should not flag contracts that do not touch storage", () => {
       const code = `
         fn add(a: i128, b: i128) -> i128 {
           a + b
@@ -199,7 +199,7 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should not flag commented code', () => {
+    it("should not flag commented code", () => {
       const code = `
         // env.storage().persistent().set(&key, &value);
       `;
@@ -209,8 +209,8 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
     });
   });
 
-  describe('Integration tests', () => {
-    it('should process a complex Soroban contract', () => {
+  describe("Integration tests", () => {
+    it("should process a complex Soroban contract", () => {
       const code = `
         #[contractimpl]
         impl Vault {
@@ -233,21 +233,20 @@ describe('AuditPulse Scanner Tests (Soroban)', () => {
       const unwrapVulns = UnwrapUsagePlugin.scan(code);
       const ttlVulns = MissingExtendTtlPlugin.scan(code);
 
-      // withdraw lacks require_auth; storage access is never TTL-extended.
       expect(authVulns.length).toBe(1);
       expect(unwrapVulns.length).toBe(0);
       expect(ttlVulns.length).toBe(1);
     });
 
-    it('should handle empty code', () => {
-      const code = '';
+    it("should handle empty code", () => {
+      const code = "";
 
       expect(MissingRequireAuthPlugin.scan(code).length).toBe(0);
       expect(UnwrapUsagePlugin.scan(code).length).toBe(0);
       expect(MissingExtendTtlPlugin.scan(code).length).toBe(0);
     });
 
-    it('should handle a clean contract with no findings', () => {
+    it("should handle a clean contract with no findings", () => {
       const code = `
         fn transfer(env: Env, from: Address, to: Address, amount: i128) {
           env.require_auth(&from);

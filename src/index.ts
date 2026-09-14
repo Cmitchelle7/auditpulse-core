@@ -1,14 +1,9 @@
-import fs from 'fs';
-import path from 'path';
-import type { IRulePlugin } from './types';
-import MissingRequireAuthPlugin from './plugins/missingRequireAuth';
-import UnwrapUsagePlugin from './plugins/unwrapUsage';
-import MissingExtendTtlPlugin from './plugins/missingExtendTtl';
+import fs from "fs";
+import type { IRulePlugin } from "./types";
+import MissingRequireAuthPlugin from "./plugins/missingRequireAuth";
+import UnwrapUsagePlugin from "./plugins/unwrapUsage";
+import MissingExtendTtlPlugin from "./plugins/missingExtendTtl";
 
-/**
- * AuditPulse CLI Engine
- * Main entry point for scanning Soroban (Stellar) Rust contracts for vulnerabilities
- */
 class AuditPulseCLI {
   private rules: IRulePlugin[] = [
     MissingRequireAuthPlugin,
@@ -16,73 +11,56 @@ class AuditPulseCLI {
     MissingExtendTtlPlugin,
   ];
 
-  /**
-   * Main CLI entry point
-   */
   run(args: string[]): void {
     if (args.length < 2) {
-      console.error('Usage: npx ts-node src/index.ts <file-path>');
+      console.error("Usage: npx ts-node src/index.ts <file-path>");
       process.exit(1);
     }
 
-    const filePath = args[args.length - 1]!;
-
-    if (!fs.existsSync(filePath)) {
-      console.error(`Error: File not found: ${filePath}`);
+    const file = args[args.length - 1]!;
+    if (!fs.existsSync(file)) {
+      console.error(`Error: File not found: ${file}`);
       process.exit(1);
     }
 
-    const code = fs.readFileSync(filePath, 'utf-8');
-    this.scanCode(code, filePath);
+    this.scan(fs.readFileSync(file, "utf-8"), file);
   }
 
-  /**
-   * Scan code using all registered rules
-   */
-  private scanCode(code: string, filePath: string): void {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`AuditPulse Security Scanner Report`);
-    console.log(`File: ${filePath}`);
-    console.log(`${'='.repeat(60)}\n`);
+  private scan(code: string, file: string): void {
+    console.log(`\n${"=".repeat(60)}`);
+    console.log("AuditPulse Security Scanner Report");
+    console.log(`File: ${file}`);
+    console.log(`${"=".repeat(60)}\n`);
 
-    let totalWarnings = 0;
-    const allVulnerabilities = [];
-
-    // Run all rules
+    let total = 0;
     for (const rule of this.rules) {
-      const vulnerabilities = rule.scan(code);
-      totalWarnings += vulnerabilities.length;
+      const findings = rule.scan(code);
+      total += findings.length;
 
-      if (vulnerabilities.length > 0) {
-        console.log(`\n[${rule.name.toUpperCase()}]`);
-        console.log(`Description: ${rule.description}`);
-        console.log(`Vulnerabilities found: ${vulnerabilities.length}\n`);
+      console.log(`\n[${rule.name.toUpperCase()}]`);
+      console.log(`Description: ${rule.description}`);
+      if (findings.length === 0) {
+        console.log("Status: ✓ No vulnerabilities found");
+        continue;
+      }
 
-        vulnerabilities.forEach((vuln) => {
-          console.log(
-            `  Line ${vuln.line}: [${vuln.severity.toUpperCase()}] ${vuln.message}`
-          );
-          allVulnerabilities.push({ rule: rule.name, ...vuln });
-        });
-      } else {
-        console.log(`\n[${rule.name.toUpperCase()}]`);
-        console.log(`Description: ${rule.description}`);
-        console.log(`Status: ✓ No vulnerabilities found`);
+      console.log(`Vulnerabilities found: ${findings.length}\n`);
+      for (const finding of findings) {
+        console.log(
+          `  Line ${finding.line}: [${finding.severity.toUpperCase()}] ${finding.message}`,
+        );
       }
     }
 
-    // Print summary
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`Summary:`);
-    console.log(`Total Vulnerabilities: ${totalWarnings}`);
-    console.log(`${'='.repeat(60)}\n`);
+    console.log(`\n${"=".repeat(60)}`);
+    console.log("Summary:");
+    console.log(`Total Vulnerabilities: ${total}`);
+    console.log(`${"=".repeat(60)}\n`);
 
-    if (totalWarnings > 0) {
+    if (total > 0) {
       process.exit(1);
     }
   }
 }
 
-// CLI Entry point
-const cli = new AuditPulseCLI();
-cli.run(process.argv);
+new AuditPulseCLI().run(process.argv);

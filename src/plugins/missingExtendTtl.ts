@@ -1,62 +1,42 @@
-import type { IRulePlugin, Vulnerability } from '../types';
+import type { IRulePlugin, Vulnerability } from "../types";
 
-/**
- * Soroban rule: flag storage access that is not accompanied by an
- * `extend_ttl` / `extend_ttl_to_threshold` call on the environment.
- *
- * Soroban ledger entries expire: persistent and temporary entries have
- * time-based TTLs and, once expired, reads return `None` as if the data
- * never existed. Contracts that assume storage values live forever produce
- * silent fund loss or broken invariants. Storage touching code should bump
- * the TTL of the entries it relies on.
- */
 export class MissingExtendTtlPlugin implements IRulePlugin {
-  name = 'Missing Extend TTL';
+  name = "Missing Extend TTL";
   description =
-    'Detects ledger storage access (persistent/temporary instance storage) that is never accompanied by an extend_ttl call, which risks silent data expiry';
+    "Detects ledger storage access (persistent/temporary instance storage) that is never accompanied by an extend_ttl call, which risks silent data expiry";
 
-  /** Strip // line and /* block *​/ comments so commented code is not scanned. */
   private removeComments(code: string): string {
-    let result = code.replace(/\/\/.*$/gm, '');
-    result = result.replace(/\/\*[\s\S]*?\*\//g, '');
-    return result;
+    return code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   }
 
   scan(code: string): Vulnerability[] {
-    const vulnerabilities: Vulnerability[] = [];
-    const cleanCode = this.removeComments(code);
+    const findings: Vulnerability[] = [];
+    const clean = this.removeComments(code);
+    const storage = /storage\s*\(\s*\)\s*\./;
 
-    // `env.storage()` followed by any accessor chain (instance/persistent/temporary).
-    const touchesStorage = /storage\s*\(\s*\)\s*\./.test(cleanCode);
-
-    if (!touchesStorage) {
-      return vulnerabilities;
+    if (!storage.test(clean)) {
+      return findings;
     }
 
-    // Any explicit TTL bump anywhere in the contract satisfies the rule.
-    const hasExtendTtl =
-      /\.extend_ttl\s*\(/.test(cleanCode) ||
-      /extend_ttl_to_threshold\s*\(/.test(cleanCode) ||
-      /get_extended\s*\(/.test(cleanCode);
-
-    if (hasExtendTtl) {
-      return vulnerabilities;
+    const extended =
+      /\.extend_ttl\s*\(/.test(clean) ||
+      /extend_ttl_to_threshold\s*\(/.test(clean) ||
+      /get_extended\s*\(/.test(clean);
+    if (extended) {
+      return findings;
     }
 
-    // Report the first storage-touching line so the report is actionable.
-    const lines = cleanCode.split('\n');
-    const storageLine = lines.findIndex((line) => /storage\s*\(\s*\)\s*\./.test(line));
-
-    if (storageLine >= 0) {
-      vulnerabilities.push({
-        line: storageLine + 1,
+    const line = clean.split("\n").findIndex((value) => storage.test(value));
+    if (line >= 0) {
+      findings.push({
+        line: line + 1,
         message:
-          'Ledger entries accessed here are never bumped via extend_ttl; expired persistent/temporary entries read back as None. Add env.storage().extend_ttl(...) to keep required entries alive.',
-        severity: 'high',
+          "Ledger entries accessed here are never bumped via extend_ttl; expired persistent/temporary entries read back as None. Add env.storage().extend_ttl(...) to keep required entries alive.",
+        severity: "high",
       });
     }
 
-    return vulnerabilities;
+    return findings;
   }
 }
 
