@@ -13,8 +13,8 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = UncheckedReturnPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].message).toContain('Unchecked return value');
-      expect(vulnerabilities[0].severity).toBe('high');
+      expect(vulnerabilities[0]?.message).toContain('Unchecked return value');
+      expect(vulnerabilities[0]?.severity).toBe('high');
     });
 
     it('should detect unchecked .call() method', () => {
@@ -26,7 +26,7 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = UncheckedReturnPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].severity).toBe('high');
+      expect(vulnerabilities[0]?.severity).toBe('high');
     });
 
     it('should detect unchecked .delegatecall()', () => {
@@ -38,7 +38,7 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = UncheckedReturnPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].message).toContain('Unchecked return value');
+      expect(vulnerabilities[0]?.message).toContain('Unchecked return value');
     });
 
     it('should not flag checked return values', () => {
@@ -77,8 +77,8 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = ReentrancyCheckPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].message).toContain('reentrancy');
-      expect(vulnerabilities[0].severity).toBe('critical');
+      expect(vulnerabilities[0]?.message).toContain('reentrancy');
+      expect(vulnerabilities[0]?.severity).toBe('critical');
     });
 
     it('should not flag safe external calls (state change first)', () => {
@@ -103,7 +103,7 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = ReentrancyCheckPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].severity).toBe('critical');
+      expect(vulnerabilities[0]?.severity).toBe('critical');
     });
 
     it('should handle multiple functions independently', () => {
@@ -122,7 +122,7 @@ describe('AuditPulse Scanner Tests', () => {
       const vulnerabilities = ReentrancyCheckPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
       // Should detect the unsafe pattern
-      expect(vulnerabilities.some(v => v.severity === 'critical')).toBe(true);
+      expect(vulnerabilities.some((v) => v?.severity === 'critical')).toBe(true);
     });
 
     it('should detect delegatecall before state change', () => {
@@ -135,7 +135,7 @@ describe('AuditPulse Scanner Tests', () => {
 
       const vulnerabilities = ReentrancyCheckPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0].severity).toBe('critical');
+      expect(vulnerabilities[0]?.severity).toBe('critical');
     });
   });
 

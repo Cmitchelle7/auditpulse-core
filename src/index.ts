@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { IRulePlugin } from './types';
+import type { IRulePlugin } from './types';
 import UncheckedReturnPlugin from './plugins/uncheckedReturn';
 import ReentrancyCheckPlugin from './plugins/reentrancyCheck';
 

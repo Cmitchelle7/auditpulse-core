@@ -1,4 +1,4 @@
-import { IRulePlugin, Vulnerability } from '../types';
+import type { IRulePlugin, Vulnerability } from '../types';
 
 /**
  * Plugin to detect reentrancy vulnerabilities
