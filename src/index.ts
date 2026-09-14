@@ -1,15 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import type { IRulePlugin } from './types';
-import UncheckedReturnPlugin from './plugins/uncheckedReturn';
-import ReentrancyCheckPlugin from './plugins/reentrancyCheck';
+import MissingRequireAuthPlugin from './plugins/missingRequireAuth';
+import UnwrapUsagePlugin from './plugins/unwrapUsage';
+import MissingExtendTtlPlugin from './plugins/missingExtendTtl';
 
 /**
  * AuditPulse CLI Engine
- * Main entry point for scanning Solidity files for vulnerabilities
+ * Main entry point for scanning Soroban (Stellar) Rust contracts for vulnerabilities
  */
 class AuditPulseCLI {
-  private rules: IRulePlugin[] = [UncheckedReturnPlugin, ReentrancyCheckPlugin];
+  private rules: IRulePlugin[] = [
+    MissingRequireAuthPlugin,
+    UnwrapUsagePlugin,
+    MissingExtendTtlPlugin,
+  ];
 
   /**
    * Main CLI entry point
@@ -20,7 +25,7 @@ class AuditPulseCLI {
       process.exit(1);
     }
 
-    const filePath = args[args.length - 1];
+    const filePath = args[args.length - 1]!;
 
     if (!fs.existsSync(filePath)) {
       console.error(`Error: File not found: ${filePath}`);

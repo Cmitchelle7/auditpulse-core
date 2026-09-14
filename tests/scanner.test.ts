@@ -1,198 +1,265 @@
 import { describe, it, expect } from 'vitest';
-import UncheckedReturnPlugin from '../src/plugins/uncheckedReturn';
-import ReentrancyCheckPlugin from '../src/plugins/reentrancyCheck';
+import MissingRequireAuthPlugin from '../src/plugins/missingRequireAuth';
+import UnwrapUsagePlugin from '../src/plugins/unwrapUsage';
+import MissingExtendTtlPlugin from '../src/plugins/missingExtendTtl';
 
-describe('AuditPulse Scanner Tests', () => {
-  describe('UncheckedReturnPlugin', () => {
-    it('should detect unchecked .send() calls', () => {
+describe('AuditPulse Scanner Tests (Soroban)', () => {
+  describe('MissingRequireAuthPlugin', () => {
+    it('should detect token transfer without require_auth', () => {
       const code = `
-        function withdraw() public {
-          msg.sender.send(1 ether);
+        fn withdraw(env: Env, to: Address, amount: i128) {
+          let client = token::Client::new(&env, &token_id);
+          client.transfer(&to, &amount);
         }
       `;
 
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('Unchecked return value');
-      expect(vulnerabilities[0]?.severity).toBe('high');
-    });
-
-    it('should detect unchecked .call() method', () => {
-      const code = `
-        function execute() public {
-          address(target).call{value: amount}("");
-        }
-      `;
-
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
-      expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.severity).toBe('high');
-    });
-
-    it('should detect unchecked .delegatecall()', () => {
-      const code = `
-        function delegateExecute(address target, bytes memory data) public {
-          target.delegatecall(data);
-        }
-      `;
-
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
-      expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('Unchecked return value');
-    });
-
-    it('should not flag checked return values', () => {
-      const code = `
-        function withdraw() public {
-          require(msg.sender.send(1 ether), "Send failed");
-        }
-      `;
-
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
-      expect(vulnerabilities.length).toBe(0);
-    });
-
-    it('should not flag assigned return values', () => {
-      const code = `
-        function executeCall() public {
-          bool success = address(target).call{value: amount}("");
-        }
-      `;
-
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
-      // This test may not catch assigned values depending on pattern complexity
-      // but the plugin should have some level of detection
-      expect(Array.isArray(vulnerabilities)).toBe(true);
-    });
-  });
-
-  describe('ReentrancyCheckPlugin', () => {
-    it('should detect external call before state change', () => {
-      const code = `
-        function withdraw(uint amount) public {
-          msg.sender.call{value: amount}("");
-          balances[msg.sender] = 0;
-        }
-      `;
-
-      const vulnerabilities = ReentrancyCheckPlugin.scan(code);
-      expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.message).toContain('reentrancy');
+      expect(vulnerabilities[0]?.message).toContain('require_auth');
       expect(vulnerabilities[0]?.severity).toBe('critical');
     });
 
-    it('should not flag safe external calls (state change first)', () => {
+    it('should detect balance update without require_auth', () => {
       const code = `
-        function withdraw(uint amount) public {
-          balances[msg.sender] = 0;
-          msg.sender.call{value: amount}("");
+        fn debit(env: Env, user: Address, amount: i128) {
+          let mut balances = get_balances(env.clone());
+          balances.set(&user, &(balances.get(&user).unwrap_or(0) - amount));
         }
       `;
 
-      const vulnerabilities = ReentrancyCheckPlugin.scan(code);
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
+      expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.severity).toBe('critical');
+    });
+
+    it('should not flag functions with require_auth', () => {
+      const code = `
+        fn withdraw(env: Env, to: Address, amount: i128) {
+          env.require_auth(&to);
+          let client = token::Client::new(&env, &token_id);
+          client.transfer(&to, &amount);
+        }
+      `;
+
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBe(0);
     });
 
-    it('should detect transfer before state change', () => {
+    it('should not flag functions with require_auth_for_args', () => {
       const code = `
-        function withdrawToken(uint amount) public {
-          token.transfer(msg.sender, amount);
-          tokenBalance[msg.sender] -= amount;
+        fn swap(env: Env, args: Vec<Val>) {
+          env.require_auth_for_args(&user, &args);
+          client.transfer(&to, &amount);
         }
       `;
 
-      const vulnerabilities = ReentrancyCheckPlugin.scan(code);
-      expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.severity).toBe('critical');
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+
+    it('should not flag functions without auth-sensitive operations', () => {
+      const code = `
+        fn name(env: Env) -> String {
+          env.storage().instance().get(&NAME).unwrap_or_default()
+        }
+      `;
+
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
     });
 
     it('should handle multiple functions independently', () => {
       const code = `
-        function safe() public {
-          balances[msg.sender] = 0;
-          msg.sender.call{value: amount}("");
+        fn safe_transfer(env: Env, to: Address, amount: i128) {
+          env.require_auth(&to);
+          client.transfer(&to, &amount);
         }
-        
-        function unsafe() public {
-          msg.sender.call{value: amount}("");
-          balances[msg.sender] = 0;
+
+        fn unsafe_transfer(env: Env, to: Address, amount: i128) {
+          client.transfer(&to, &amount);
         }
       `;
 
-      const vulnerabilities = ReentrancyCheckPlugin.scan(code);
+      const vulnerabilities = MissingRequireAuthPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(1);
+      expect(vulnerabilities[0]?.message).toContain('unsafe_transfer');
+    });
+  });
+
+  describe('UnwrapUsagePlugin', () => {
+    it('should detect direct .unwrap()', () => {
+      const code = `
+        fn balance(env: Env, user: Address) -> i128 {
+          env.storage().persistent().get(&user).unwrap()
+        }
+      `;
+
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      // Should detect the unsafe pattern
-      expect(vulnerabilities.some((v) => v?.severity === 'critical')).toBe(true);
+      expect(vulnerabilities[0]?.message).toContain('.unwrap()');
+      expect(vulnerabilities[0]?.severity).toBe('high');
     });
 
-    it('should detect delegatecall before state change', () => {
+    it('should detect .expect()', () => {
       const code = `
-        function execute(address target, bytes memory data) public {
-          target.delegatecall(data);
-          executed = true;
+        fn admin(env: Env) -> Address {
+          env.storage().instance().get(&ADMIN).expect("admin not set")
         }
       `;
 
-      const vulnerabilities = ReentrancyCheckPlugin.scan(code);
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
-      expect(vulnerabilities[0]?.severity).toBe('critical');
+      expect(vulnerabilities[0]?.message).toContain('.expect()');
+    });
+
+    it('should detect panic!()', () => {
+      const code = `
+        fn do_thing(env: Env) {
+          if bad {
+            panic!("bad state");
+          }
+        }
+      `;
+
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
+      expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.message).toContain('panic!');
+    });
+
+    it('should not flag ?-based error propagation', () => {
+      const code = `
+        fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), ContractError> {
+          client.transfer(&to, &amount)?;
+          Ok(())
+        }
+      `;
+
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+
+    it('should not flag commented code', () => {
+      const code = `
+        // fn balance(env: Env) -> i128 {
+        //   env.storage().persistent().get(&user).unwrap()
+        // }
+      `;
+
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+  });
+
+  describe('MissingExtendTtlPlugin', () => {
+    it('should detect storage access without extend_ttl', () => {
+      const code = `
+        fn save(env: Env, key: Symbol, value: i128) {
+          env.storage().persistent().set(&key, &value);
+        }
+      `;
+
+      const vulnerabilities = MissingExtendTtlPlugin.scan(code);
+      expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.message).toContain('extend_ttl');
+      expect(vulnerabilities[0]?.severity).toBe('high');
+    });
+
+    it('should not flag storage access with extend_ttl', () => {
+      const code = `
+        fn save(env: Env, key: Symbol, value: i128) {
+          env.storage().persistent().set(&key, &value);
+          env.storage().persistent().extend_ttl(&key, 100, 200);
+        }
+      `;
+
+      const vulnerabilities = MissingExtendTtlPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+
+    it('should not flag extend_ttl_to_threshold usage', () => {
+      const code = `
+        fn save(env: Env, key: Symbol, value: i128) {
+          env.storage().persistent().set(&key, &value);
+          env.storage().persistent().extend_ttl_to_threshold(&key, Threshold::Persistent);
+        }
+      `;
+
+      const vulnerabilities = MissingExtendTtlPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+
+    it('should not flag contracts that do not touch storage', () => {
+      const code = `
+        fn add(a: i128, b: i128) -> i128 {
+          a + b
+        }
+      `;
+
+      const vulnerabilities = MissingExtendTtlPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
+    });
+
+    it('should not flag commented code', () => {
+      const code = `
+        // env.storage().persistent().set(&key, &value);
+      `;
+
+      const vulnerabilities = MissingExtendTtlPlugin.scan(code);
+      expect(vulnerabilities.length).toBe(0);
     });
   });
 
   describe('Integration tests', () => {
-    it('should process complex Solidity code', () => {
+    it('should process a complex Soroban contract', () => {
       const code = `
-        contract Bank {
-          mapping(address => uint) balances;
-          
-          function deposit() public payable {
-            balances[msg.sender] += msg.value;
+        #[contractimpl]
+        impl Vault {
+          pub fn deposit(env: Env, user: Address, amount: i128) {
+            env.require_auth(&user);
+            let client = token::Client::new(&env, &token_id);
+            client.transfer(&user, &contract, &amount);
+            let mut balances = env.storage().persistent().get(&BALANCES).unwrap_or_default();
           }
-          
-          function withdraw(uint amount) public {
-            require(balances[msg.sender] >= amount, "Insufficient balance");
-            msg.sender.call{value: amount}("");
-            balances[msg.sender] -= amount;
-          }
-          
-          function emergencyWithdraw() public {
-            uint amount = balances[msg.sender];
-            balances[msg.sender] = 0;
-            require(msg.sender.send(amount));
+
+          pub fn withdraw(env: Env, user: Address, amount: i128) {
+            let client = token::Client::new(&env, &token_id);
+            client.transfer(&contract, &user, &amount);
+            env.storage().persistent().remove(&user);
           }
         }
       `;
 
-      const uncheckedVulns = UncheckedReturnPlugin.scan(code);
-      const reentrancyVulns = ReentrancyCheckPlugin.scan(code);
+      const authVulns = MissingRequireAuthPlugin.scan(code);
+      const unwrapVulns = UnwrapUsagePlugin.scan(code);
+      const ttlVulns = MissingExtendTtlPlugin.scan(code);
 
-      // Should find vulnerabilities in withdraw
-      expect(uncheckedVulns.length + reentrancyVulns.length).toBeGreaterThan(0);
+      // withdraw lacks require_auth; storage access is never TTL-extended.
+      expect(authVulns.length).toBe(1);
+      expect(unwrapVulns.length).toBe(0);
+      expect(ttlVulns.length).toBe(1);
     });
 
     it('should handle empty code', () => {
       const code = '';
-      const uncheckedVulns = UncheckedReturnPlugin.scan(code);
-      const reentrancyVulns = ReentrancyCheckPlugin.scan(code);
 
-      expect(uncheckedVulns.length).toBe(0);
-      expect(reentrancyVulns.length).toBe(0);
+      expect(MissingRequireAuthPlugin.scan(code).length).toBe(0);
+      expect(UnwrapUsagePlugin.scan(code).length).toBe(0);
+      expect(MissingExtendTtlPlugin.scan(code).length).toBe(0);
     });
 
-    it('should handle comments correctly', () => {
+    it('should handle a clean contract with no findings', () => {
       const code = `
-        // msg.sender.send(1 ether); // This is commented out
-        function safe() public {
-          /* 
-            msg.sender.send(1 ether);
-            This is also commented
-          */
+        fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+          env.require_auth(&from);
+          let client = token::Client::new(&env, &token_id);
+          client.transfer(&to, &amount);
+          env.storage().persistent().extend_ttl(&from, 100, 200);
         }
       `;
 
-      const vulnerabilities = UncheckedReturnPlugin.scan(code);
-      // Should not flag commented code
-      expect(vulnerabilities.length).toBe(0);
+      expect(MissingRequireAuthPlugin.scan(code).length).toBe(0);
+      expect(UnwrapUsagePlugin.scan(code).length).toBe(0);
+      expect(MissingExtendTtlPlugin.scan(code).length).toBe(0);
     });
   });
 });
