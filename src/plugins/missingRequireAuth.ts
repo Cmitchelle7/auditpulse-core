@@ -1,5 +1,5 @@
 import type { Rule, Vulnerability } from "../types";
-import { removeComments } from "../utils/rust.js";
+import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
 export class MissingRequireAuthPlugin implements Rule {
   id = "AP-AUTH-001";
@@ -7,38 +7,9 @@ export class MissingRequireAuthPlugin implements Rule {
   description =
     "Detects authorization-sensitive operations (token transfers, balance updates, ledger entry writes) in functions that never call env.require_auth()";
 
-  // TODO: Replace brace counting with a Soroban Rust AST walk to isolate nested function spans.
-  private extractFunctions(
-    code: string,
-  ): Array<{ line: number; body: string }> {
-    const lines = code.split("\n");
-    const fns: Array<{ line: number; body: string }> = [];
-    let fn: { line: number; body: string[]; depth: number } | null = null;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      if (fn === null && /\bfn\s+\w+\s*\(/.test(line)) {
-        fn = { line: i + 1, body: [], depth: 0 };
-      }
-      if (fn === null) {
-        continue;
-      }
-
-      fn.body.push(line);
-      fn.depth +=
-        (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length;
-      if (fn.depth <= 0) {
-        fns.push({ line: fn.line, body: fn.body.join("\n") });
-        fn = null;
-      }
-    }
-
-    return fns;
-  }
-
   scan(code: string): Vulnerability[] {
     const findings: Vulnerability[] = [];
-    const fns = this.extractFunctions(removeComments(code));
+    const fns = extractRustFunctions(sanitizeKeepLines(code));
 
     for (const fn of fns) {
       const brace = fn.body.indexOf("{");

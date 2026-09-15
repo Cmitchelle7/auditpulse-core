@@ -45,17 +45,25 @@ describe("RuleRegistry", () => {
     );
   });
 
-  it("createDefaultRegistry exposes the three built-in rules", () => {
+  it("createDefaultRegistry exposes the built-in rules", () => {
     const registry = createDefaultRegistry();
 
     expect(registry.all().map((rule) => rule.id)).toEqual([
       "AP-AUTH-001",
       "AP-ERROR-001",
       "AP-STORAGE-001",
+      "AP-ARITH-001",
+      "AP-CALL-001",
+      "AP-UPG-001",
+      "AP-DEBUG-001",
     ]);
     expect(registry.has("AP-AUTH-001")).toBe(true);
     expect(registry.has("AP-ERROR-001")).toBe(true);
     expect(registry.has("AP-STORAGE-001")).toBe(true);
+    expect(registry.has("AP-ARITH-001")).toBe(true);
+    expect(registry.has("AP-CALL-001")).toBe(true);
+    expect(registry.has("AP-UPG-001")).toBe(true);
+    expect(registry.has("AP-DEBUG-001")).toBe(true);
   });
 });
 

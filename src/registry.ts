@@ -2,6 +2,10 @@ import type { Rule, RuleId } from "./types";
 import MissingRequireAuthPlugin from "./plugins/missingRequireAuth.js";
 import UnwrapUsagePlugin from "./plugins/unwrapUsage.js";
 import MissingExtendTtlPlugin from "./plugins/missingExtendTtl.js";
+import UncheckedArithmeticPlugin from "./plugins/uncheckedArithmetic.js";
+import UnvalidatedExternalCallPlugin from "./plugins/unvalidatedExternalCall.js";
+import UnprotectedUpgradePlugin from "./plugins/unprotectedUpgrade.js";
+import DebugStatementsPlugin from "./plugins/debugStatements.js";
 
 /**
  * Holds the rules available to the engine, keyed by their stable id.
@@ -40,5 +44,9 @@ export function createDefaultRegistry(): RuleRegistry {
   return new RuleRegistry()
     .register(MissingRequireAuthPlugin)
     .register(UnwrapUsagePlugin)
-    .register(MissingExtendTtlPlugin);
+    .register(MissingExtendTtlPlugin)
+    .register(UncheckedArithmeticPlugin)
+    .register(UnvalidatedExternalCallPlugin)
+    .register(UnprotectedUpgradePlugin)
+    .register(DebugStatementsPlugin);
 }
