@@ -1,17 +1,15 @@
-import type { IRulePlugin, Vulnerability } from "../types";
+import type { Rule, Vulnerability } from "../types";
+import { removeComments } from "../utils/rust.js";
 
-export class MissingExtendTtlPlugin implements IRulePlugin {
+export class MissingExtendTtlPlugin implements Rule {
+  id = "AP-STORAGE-001";
   name = "Missing Extend TTL";
   description =
     "Detects ledger storage access (persistent/temporary instance storage) that is never accompanied by an extend_ttl call, which risks silent data expiry";
 
-  private removeComments(code: string): string {
-    return code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  }
-
   scan(code: string): Vulnerability[] {
     const findings: Vulnerability[] = [];
-    const clean = this.removeComments(code);
+    const clean = removeComments(code);
     const storage = /storage\s*\(\s*\)\s*\./;
 
     if (!storage.test(clean)) {

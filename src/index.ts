@@ -1,14 +1,8 @@
 import fs from "fs";
-import type { IRulePlugin } from "./types";
-import MissingRequireAuthPlugin from "./plugins/missingRequireAuth";
-import UnwrapUsagePlugin from "./plugins/unwrapUsage";
-import MissingExtendTtlPlugin from "./plugins/missingExtendTtl";
+import { AuditEngine } from "./engine.js";
+import { createDefaultRegistry } from "./registry.js";
 
-const rules: IRulePlugin[] = [
-  MissingRequireAuthPlugin,
-  UnwrapUsagePlugin,
-  MissingExtendTtlPlugin,
-];
+const engine = new AuditEngine(createDefaultRegistry());
 
 // TODO: Add AST-based macro expansion for complex Soroban attributes
 function main(filePath: string): void {
@@ -24,8 +18,8 @@ function main(filePath: string): void {
   console.log(`${"=".repeat(60)}\n`);
 
   let total = 0;
-  for (const rule of rules) {
-    const findings = rule.scan(code);
+  for (const rule of engine.rules()) {
+    const findings = engine.runRule(rule.id, code);
     total += findings.length;
 
     console.log(`\n[${rule.name.toUpperCase()}]`);

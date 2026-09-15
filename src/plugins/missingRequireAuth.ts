@@ -1,13 +1,11 @@
-import type { IRulePlugin, Vulnerability } from "../types";
+import type { Rule, Vulnerability } from "../types";
+import { removeComments } from "../utils/rust.js";
 
-export class MissingRequireAuthPlugin implements IRulePlugin {
+export class MissingRequireAuthPlugin implements Rule {
+  id = "AP-AUTH-001";
   name = "Missing Require Auth";
   description =
     "Detects authorization-sensitive operations (token transfers, balance updates, ledger entry writes) in functions that never call env.require_auth()";
-
-  private removeComments(code: string): string {
-    return code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  }
 
   // TODO: Replace brace counting with a Soroban Rust AST walk to isolate nested function spans.
   private extractFunctions(
@@ -40,7 +38,7 @@ export class MissingRequireAuthPlugin implements IRulePlugin {
 
   scan(code: string): Vulnerability[] {
     const findings: Vulnerability[] = [];
-    const fns = this.extractFunctions(this.removeComments(code));
+    const fns = this.extractFunctions(removeComments(code));
 
     for (const fn of fns) {
       const brace = fn.body.indexOf("{");

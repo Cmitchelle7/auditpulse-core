@@ -1,18 +1,16 @@
-import type { IRulePlugin, Vulnerability } from "../types";
+import type { Rule, Vulnerability } from "../types";
+import { removeComments } from "../utils/rust.js";
 
-export class UnwrapUsagePlugin implements IRulePlugin {
+export class UnwrapUsagePlugin implements Rule {
+  id = "AP-ERROR-001";
   name = "Unwrap Usage";
   description =
     "Detects .unwrap(), .expect(), and panic!() calls in Soroban contracts; prefer returning Result<_, ContractError> instead";
 
-  private removeComments(code: string): string {
-    return code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  }
-
   // TODO: Use Soroban AST expression spans to distinguish executable calls from strings and macros.
   scan(code: string): Vulnerability[] {
     const findings: Vulnerability[] = [];
-    const lines = this.removeComments(code).split("\n");
+    const lines = removeComments(code).split("\n");
     const pattern = /\.unwrap\s*\(|\.expect\s*\(|\bpanic!\s*\(/;
 
     lines.forEach((line, index) => {
