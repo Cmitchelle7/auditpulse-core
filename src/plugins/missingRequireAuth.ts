@@ -56,11 +56,12 @@ export class MissingRequireAuthPlugin implements IRulePlugin {
       const authorized = /require_auth(?:_for_args)?\s*\(/.test(body);
       if (!authorized) {
         const name = /\bfn\s+(\w+)\s*\(/.exec(fn.body)?.[1] ?? "<anonymous>";
-        findings.push({
-          line: fn.line,
-          message: `Authorization-sensitive operations in function '${name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
-          severity: "critical",
-        });
+       findings.push({
+  id: "AP-AUTH-001",
+  line: fn.line,
+  message: `Authorization-sensitive operations in function '${name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
+  severity: "critical",
+});
       }
     }
 

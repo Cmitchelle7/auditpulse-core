@@ -30,11 +30,12 @@ export class UnwrapUsagePlugin implements IRulePlugin {
         : /\.expect\s*\(/.test(text)
           ? ".expect()"
           : ".unwrap()";
-      findings.push({
-        line: index + 1,
-        message: `Direct use of ${kind} will panic and abort the contract invocation. Return Result<T, ContractError> and handle the error case instead.`,
-        severity: "high",
-      });
+     findings.push({
+  id: "AP-ERROR-001",
+  line: index + 1,
+  message: `Direct use of ${kind} will panic and abort the contract invocation. Return Result<T, ContractError> and handle the error case instead.`,
+  severity: "high",
+});
     });
 
     return findings;

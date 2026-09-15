@@ -2,6 +2,7 @@ export interface Vulnerability {
   line: number;
   message: string;
   severity: "critical" | "high" | "medium" | "low";
+  id: string;
 }
 
 export interface IRulePlugin {

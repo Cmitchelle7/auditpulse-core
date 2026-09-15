@@ -4,8 +4,10 @@
   "description": "Automated AST static security analyzer and CLI engine for smart contract vulnerability detection.",
   "main": "index.js",
   "scripts": {
-    "test": "vitest"
-  },
+  "test": "vitest",
+  "typecheck": "tsc --noEmit",
+  "build": "tsc"
+},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Emmanuel-Ugochukwu1/auditpulse-core.git"
