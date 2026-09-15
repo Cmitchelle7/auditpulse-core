@@ -38,7 +38,9 @@ function main(filePath: string): void {
 
     console.log(`Vulnerabilities found: ${findings.length}\n`);
     for (const f of findings) {
-      console.log(`  Line ${f.line}: [${f.severity.toUpperCase()}] ${f.message}`);
+      console.log(
+        `  Line ${f.location.line}: [${f.severity.toUpperCase()}] ${f.message}`,
+      );
     }
   }
 

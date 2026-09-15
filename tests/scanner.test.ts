@@ -15,8 +15,13 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
 
       const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.id).toBe("AP-AUTH-001");
       expect(vulnerabilities[0]?.message).toContain("require_auth");
       expect(vulnerabilities[0]?.severity).toBe("critical");
+      expect(vulnerabilities[0]?.confidence).toBe("high");
+      expect(vulnerabilities[0]?.location.line).toBe(2);
+      expect(vulnerabilities[0]?.location.function).toBe("withdraw");
+      expect(vulnerabilities[0]?.remediation).toContain("require_auth");
     });
 
     it("should detect balance update without require_auth", () => {
@@ -29,6 +34,8 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
 
       const vulnerabilities = MissingRequireAuthPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.id).toBe("AP-AUTH-001");
+      expect(vulnerabilities[0]?.location.function).toBe("debit");
       expect(vulnerabilities[0]?.severity).toBe("critical");
     });
 
@@ -96,8 +103,12 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
 
       const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.id).toBe("AP-ERROR-001");
       expect(vulnerabilities[0]?.message).toContain(".unwrap()");
       expect(vulnerabilities[0]?.severity).toBe("high");
+      expect(vulnerabilities[0]?.confidence).toBe("high");
+      expect(vulnerabilities[0]?.location.line).toBe(3);
+      expect(vulnerabilities[0]?.remediation).toContain("Result");
     });
 
     it("should detect .expect()", () => {
@@ -148,6 +159,25 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
       const vulnerabilities = UnwrapUsagePlugin.scan(code);
       expect(vulnerabilities.length).toBe(0);
     });
+
+    it("should report distinct location.line values per finding", () => {
+      const code = `
+        fn a(env: Env) -> i128 {
+          env.storage().get(&K).unwrap()
+        }
+        fn b(env: Env) {
+          panic!("no admin")
+        }
+      `;
+
+      const vulnerabilities = UnwrapUsagePlugin.scan(code);
+      expect(vulnerabilities.length).toBe(2);
+      expect(vulnerabilities[0]?.id).toBe("AP-ERROR-001");
+      expect(vulnerabilities[0]?.location.line).toBe(3);
+      expect(vulnerabilities[0]?.message).toContain(".unwrap()");
+      expect(vulnerabilities[1]?.location.line).toBe(6);
+      expect(vulnerabilities[1]?.message).toContain("panic!");
+    });
   });
 
   describe("MissingExtendTtlPlugin", () => {
@@ -160,8 +190,12 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
 
       const vulnerabilities = MissingExtendTtlPlugin.scan(code);
       expect(vulnerabilities.length).toBeGreaterThan(0);
+      expect(vulnerabilities[0]?.id).toBe("AP-STORAGE-001");
       expect(vulnerabilities[0]?.message).toContain("extend_ttl");
       expect(vulnerabilities[0]?.severity).toBe("high");
+      expect(vulnerabilities[0]?.confidence).toBe("medium");
+      expect(vulnerabilities[0]?.location.line).toBe(3);
+      expect(vulnerabilities[0]?.remediation).toContain("extend_ttl");
     });
 
     it("should not flag storage access with extend_ttl", () => {
@@ -236,6 +270,10 @@ describe("AuditPulse Scanner Tests (Soroban)", () => {
       expect(authVulns.length).toBe(1);
       expect(unwrapVulns.length).toBe(0);
       expect(ttlVulns.length).toBe(1);
+      expect(authVulns[0]?.id).toBe("AP-AUTH-001");
+      expect(authVulns[0]?.location.function).toBe("withdraw");
+      expect(ttlVulns[0]?.id).toBe("AP-STORAGE-001");
+      expect(ttlVulns[0]?.location.line).toBe(8);
     });
 
     it("should handle empty code", () => {

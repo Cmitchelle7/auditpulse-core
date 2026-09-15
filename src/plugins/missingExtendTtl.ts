@@ -29,11 +29,16 @@ export class MissingExtendTtlPlugin implements IRulePlugin {
     const line = clean.split("\n").findIndex((value) => storage.test(value));
     if (line >= 0) {
       findings.push({
-  id: "AP-STORAGE-001",
-  line: line + 1,
-  message:
+        id: "AP-STORAGE-001",
+        message:
           "Ledger entries accessed here are never bumped via extend_ttl; expired persistent/temporary entries read back as None. Add env.storage().extend_ttl(...) to keep required entries alive.",
         severity: "high",
+        confidence: "medium",
+        location: {
+          line: line + 1,
+        },
+        remediation:
+          "After reading or writing persistent/temporary storage, call env.storage().persistent().extend_ttl(&key, threshold, extend_to) or extend_ttl_to_threshold to keep entries alive.",
       });
     }
 
