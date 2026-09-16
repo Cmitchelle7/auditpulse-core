@@ -43,7 +43,7 @@ fixtures/
 ### Limitations
 
 AuditPulse performs conservative source-text analysis, **not** Rust AST
-analysis. Known consequences:
+analysis, and never performs cross-file dataflow analysis. Known consequences:
 
 * `AP-ARITH-001` evaluates arithmetic line-by-line; checked math in a helper
   called from another line is not connected, and complex expression chains may
@@ -55,25 +55,35 @@ analysis. Known consequences:
 * Directory scans evaluate each Rust file independently; there is no
   cross-file dataflow analysis.
 
-## Quickstart
+## Installation
 
 ```bash
-# Install dependencies
+git clone https://github.com/Emmanuel-Ugochukwu1/auditpulse-core.git
+cd auditpulse-core
 npm install
-
-# Run the test suite
-npm test
-
-# Build the CLI
 npm run build
 
-# Scan a single contract file
-node dist/index.js scan contracts/SampleVault.rs
-
-# Scan a whole directory/workspace
-node dist/index.js scan contracts/
-
+# Optional: put the `auditpulse` command on your PATH
+npm link
 ```
+
+## Quickstart
+
+One copy-paste example, from install to report:
+
+```bash
+npm install && npm run build
+node dist/index.js scan examples/vulnerable_vault.rs            # human report, exit 1
+node dist/index.js scan examples/safe_vault.rs                  # no findings, exit 0
+node dist/index.js scan examples --format json > report.json    # machine-readable
+```
+
+The `examples/` directory contains two small Soroban-style demo contracts:
+
+| File | What it shows |
+|------|---------------|
+| `examples/vulnerable_vault.rs` | Deliberately vulnerable: trips most rules (missing auth, unchecked math, unvalidated external call, unprotected admin, panics, debug macros) |
+| `examples/safe_vault.rs` | Clean reference: authorized, checked, TTL-extended — produces zero findings |
 
 ## CLI
 
@@ -173,6 +183,31 @@ Without a config file, defaults apply: all rules enabled, `min_severity =
 
 The same semantics apply in `--format json` and `sarif` modes, so CI pipelines
 can rely on the exit code regardless of the chosen output format.
+
+## CI / GitHub Actions
+
+The repository ships a minimal workflow at
+`.github/workflows/auditpulse.yml`. It installs dependencies, builds the CLI,
+scans the configured target, uploads SARIF to GitHub Code Scanning, and fails
+the job when findings exist at or above the configured threshold.
+
+To use it in your own repository, copy the workflow and point its target at
+your contract sources:
+
+```yaml
+env:
+  SCAN_TARGET: path/to/contracts   # scanned and uploaded as SARIF
+  GATE_TARGET: path/to/contracts   # exit code gates the job (usually the same path)
+```
+
+The job needs `security-events: write` permission for the SARIF upload;
+results then appear under the repository's **Code scanning** tab.
+
+A minimal non-GitHub CI invocation relies on exit codes alone:
+
+```bash
+node dist/index.js scan contracts/ || echo "findings above threshold"
+```
 
 ## Example Output
 

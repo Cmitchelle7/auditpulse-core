@@ -163,3 +163,46 @@ describe("SARIF output", () => {
     expect(renderSarif(report(findings), { ruleDescriptions })).toBe(text);
   });
 });
+
+describe("SARIF location safety (GitHub Code Scanning)", () => {
+  const ruleDescriptions = new Map([
+    ["AP-AUTH-001", "Detects authorization-sensitive operations without require_auth."],
+  ]);
+
+  it("emits repo-relative forward-slash artifact URIs with valid regions", () => {
+    const findings = [
+      finding({ file: "contracts/SampleVault.rs", location: { line: 23, function: "withdraw" } }),
+      finding({ id: "AP-AUTH-001", file: "examples\\nested\\vault.rs", location: { line: 4 } }),
+    ];
+
+    const log = JSON.parse(
+      renderSarif(report(findings), { ruleDescriptions }),
+    ) as any;
+
+    for (const result of log.runs[0].results) {
+      const loc = result.locations[0].physicalLocation;
+      const uri: string = loc.artifactLocation.uri;
+
+      // GitHub resolves URIs relative to the repository root.
+      expect(uri).not.toMatch(/\\/);
+      expect(path.posix.isAbsolute(uri)).toBe(false);
+      expect(uri.length).toBeGreaterThan(0);
+
+      const startLine: number = loc.region.startLine;
+      expect(Number.isInteger(startLine)).toBe(true);
+      expect(startLine).toBeGreaterThanOrEqual(1);
+      expect(loc.region.startColumn).toBeUndefined(); // not fabricated
+    }
+  });
+
+  it("never emits empty locations or messages", () => {
+    const log = JSON.parse(
+      renderSarif(report([finding({ file: "a.rs" })]), { ruleDescriptions }),
+    ) as any;
+
+    const result = log.runs[0].results[0];
+    expect(result.message.text.length).toBeGreaterThan(10);
+    expect(result.locations).toHaveLength(1);
+    expect(result.ruleId).toBe("AP-AUTH-001");
+  });
+});

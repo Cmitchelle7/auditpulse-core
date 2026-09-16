@@ -42,15 +42,31 @@ function engine(): AuditEngine {
 }
 
 describe("scanTarget: single file", () => {
-  it("scans one file and preserves the given path in findings", () => {
+  it("scans one file and reports a cwd-relative path when under the working directory", () => {
+    write("vault.rs", VULNERABLE);
+    const cwdBackup = process.cwd();
+    process.chdir(tmp);
+    try {
+      const report = scanTarget("vault.rs", engine(), defaultConfig());
+
+      expect(report.filesScanned).toBe(1);
+      expect(report.findings.length).toBeGreaterThan(0);
+      for (const finding of report.findings) {
+        expect(finding.file).toBe("vault.rs");
+      }
+    } finally {
+      process.chdir(cwdBackup);
+    }
+  });
+
+  it("reports an absolute forward-slash path for files outside the working directory", () => {
     write("vault.rs", VULNERABLE);
 
     const report = scanTarget(path.join(tmp, "vault.rs"), engine(), defaultConfig());
 
-    expect(report.filesScanned).toBe(1);
     expect(report.findings.length).toBeGreaterThan(0);
     for (const finding of report.findings) {
-      expect(finding.file).toBe(path.join(tmp, "vault.rs"));
+      expect(finding.file).toBe(path.join(tmp, "vault.rs").split(path.sep).join("/"));
     }
   });
 
@@ -79,6 +95,22 @@ describe("scanTarget: single file", () => {
 });
 
 describe("scanTarget: directory", () => {
+  it("prefixes findings with the scanned directory path", () => {
+    write("src/a.rs", VULNERABLE);
+    const cwdBackup = process.cwd();
+    process.chdir(tmp);
+    try {
+      const report = scanTarget("src", engine(), defaultConfig());
+
+      expect(report.filesScanned).toBe(1);
+      for (const finding of report.findings) {
+        expect(finding.file).toBe("src/a.rs");
+      }
+    } finally {
+      process.chdir(cwdBackup);
+    }
+  });
+
   it("scans every Rust file in the tree, once each", () => {
     write("src/a.rs", VULNERABLE);
     write("src/b.rs", CLEAN);

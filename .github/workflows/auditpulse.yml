@@ -1,0 +1,95 @@
+name: AuditPulse Security Scan
+
+# Scans the repository's Soroban/Rust sources with AuditPulse and uploads
+# SARIF to GitHub Code Scanning. A dedicated gate step fails the workflow
+# when findings exist at or above the configured threshold (exit 1);
+# usage/configuration errors (exit 2) also fail the job.
+#
+# To use AuditPulse in your own repository, copy this file and point both
+# variables at your contract sources (usually the same path):
+#   SCAN_TARGET: path/to/contracts
+#   GATE_TARGET: path/to/contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.rs"
+      - ".github/workflows/auditpulse.yml"
+  pull_request:
+    paths:
+      - "**/*.rs"
+      - ".github/workflows/auditpulse.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan Rust sources
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required to upload SARIF to GitHub Code Scanning.
+      security-events: write
+
+    env:
+      # This repository's Rust files are demo material, so the full scan
+      # (SARIF upload) intentionally covers the vulnerable examples too.
+      SCAN_TARGET: examples
+      # The gate that fails the workflow: in a real project set this to the
+      # same path as SCAN_TARGET so any finding fails the build.
+      GATE_TARGET: examples/safe_vault.rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build CLI
+        run: npm run build
+
+      - name: Run AuditPulse scan (SARIF)
+        continue-on-error: true # findings are reported via the gate step below
+        run: node dist/index.js scan "$SCAN_TARGET" --format sarif > auditpulse.sarif
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: auditpulse.sarif
+
+      - name: Demo assertions (scanner end to end)
+        run: |
+          # Safe demo must be clean (exit 0).
+          node dist/index.js scan examples/safe_vault.rs
+          # Vulnerable demo must produce findings (exit 1).
+          if node dist/index.js scan examples/vulnerable_vault.rs > /dev/null; then
+            echo "vulnerable demo unexpectedly clean; scanner is broken"
+            exit 1
+          fi
+
+      - name: Fail on findings at or above the threshold
+        run: |
+          set +e
+          node dist/index.js scan "$GATE_TARGET" > /dev/null
+          code=$?
+          case $code in
+            0)
+              echo "No findings at or above the configured threshold."
+              ;;
+            1)
+              echo "AuditPulse found issues at or above the threshold."
+              exit 1
+              ;;
+            *)
+              echo "AuditPulse usage/configuration/input error (exit $code)."
+              exit 1
+              ;;
+          esac

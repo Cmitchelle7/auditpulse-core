@@ -13,7 +13,11 @@ import { discoverRustFiles } from "./workspace.js";
  * Every file is scanned independently; there is no cross-file dataflow.
  */
 export interface FileFinding extends Vulnerability {
-  /** Path as passed by the user, joined with the file's relative path. */
+  /**
+   * Path of the finding's file, relative to the current working directory
+   * when the file lives under it (otherwise absolute), always with forward
+   * slashes so the value is directly usable in SARIF/JSON output.
+   */
   file: string;
 }
 
@@ -62,8 +66,9 @@ export function scanTarget(
     if (!target.endsWith(".rs")) {
       throw new InputError(`Not a Rust source file: ${target}`);
     }
-    // The file is the target itself: report it under the path the user gave.
-    const findings = scanFile("", target, engine, config);
+    // Report the file under its display path (cwd-relative when possible) so
+    // SARIF consumers such as GitHub Code Scanning can resolve locations.
+    const findings = scanFile("", toDisplayPath(target), engine, config);
     return { target, findings, filesScanned: 1 };
   }
 
@@ -71,21 +76,52 @@ export function scanTarget(
     throw new InputError(`Not a file or directory: ${target}`);
   }
 
+  const displayRoot = toDisplayPath(target);
   const files = discoverRustFiles(target, config.exclude);
   const findings: FileFinding[] = [];
   for (const relPath of files) {
-    findings.push(...scanFile(target, relPath, engine, config));
+    // Forward-slash join: relPath is already forward-slashed (posix-style).
+    const displayPath = displayRoot === "" ? relPath : `${displayRoot}/${relPath}`;
+    findings.push(...scanFile(target, relPath, engine, config, displayPath));
   }
 
   return { target, findings, filesScanned: files.length };
 }
 
-/** Scans one file and attaches its path to every finding. */
+/**
+ * Path used in findings: relative to the current working directory when the
+ * target lives under it ("" when the target *is* the working directory),
+ * otherwise the resolved absolute path. Forward slashes throughout.
+ */
+function toDisplayPath(target: string): string {
+  let abs: string;
+  try {
+    abs = fs.realpathSync(target);
+  } catch {
+    abs = path.resolve(target);
+  }
+
+  let cwd: string;
+  try {
+    cwd = fs.realpathSync(process.cwd());
+  } catch {
+    cwd = process.cwd();
+  }
+
+  const rel = path.relative(cwd, abs);
+  if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
+    return rel.split(path.sep).join("/");
+  }
+  return abs.split(path.sep).join("/");
+}
+
+/** Scans one file and attaches its display path to every finding. */
 function scanFile(
   root: string,
   relPath: string,
   engine: AuditEngine,
   config: AuditPulseConfig,
+  displayPath: string = relPath,
 ): FileFinding[] {
   const code = fs.readFileSync(path.join(root, relPath), "utf-8");
   const findings: FileFinding[] = [];
@@ -96,7 +132,7 @@ function scanFile(
       if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[config.minSeverity]) {
         continue;
       }
-      findings.push({ ...finding, file: relPath });
+      findings.push({ ...finding, file: displayPath });
     }
   }
 
