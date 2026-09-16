@@ -184,6 +184,44 @@ Without a config file, defaults apply: all rules enabled, `min_severity =
 The same semantics apply in `--format json` and `sarif` modes, so CI pipelines
 can rely on the exit code regardless of the chosen output format.
 
+## Web Demo
+
+A minimal local web demo puts a dashboard on top of the same scanner the CLI uses — no new dependencies, just Node's built-in `http` module.
+
+```bash
+npm install && npm run build
+npm run dev:web          # serves the API + dashboard on http://127.0.0.1:4646
+```
+
+Then open **http://127.0.0.1:4646** and:
+
+1. Click **Load safe example** → **Run scan** → "No findings" (clean result state).
+2. Click **Load vulnerable example** → **Run scan** → multiple findings, each with rule ID, severity, confidence, message, location and remediation guidance.
+
+The **Run scan** button `POST`s the editor contents to the API and renders the JSON report. You can also paste any Rust source directly into the editor.
+
+### API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Liveness probe: `{"status":"ok"}` |
+| `POST /api/scan` | Scan in-memory source: `{"source": "<rust source>"}` → full JSON report (same model as `scan --format json`) |
+| `GET /api/examples/safe` | Load `examples/safe_vault.rs` |
+| `GET /api/examples/vulnerable` | Load `examples/vulnerable_vault.rs` |
+
+```bash
+# Scan a contract through the API
+curl -s -X POST http://127.0.0.1:4646/api/scan \
+  -H "Content-Type: application/json" \
+  -d "{\"source\": \"pub fn f(env: Env) { let x = a + b; }\"}"
+```
+
+Notes:
+
+* Submitted source is analyzed **in memory** by the existing source-text heuristic rules and is never executed or written to disk.
+* Request bodies are capped (256 KB) and invalid input returns a JSON error with a 4xx status.
+* The analyzer is source-text heuristic analysis — **not** AST analysis, and there is no cross-file dataflow. See [Limitations](#limitations).
+
 ## CI / GitHub Actions
 
 The repository ships a minimal workflow at

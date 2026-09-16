@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AuditPulse — Soroban Security &amp; Quality Scanner</title>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #1a2234;
+    --border: #26304a;
+    --text: #e6ebf5;
+    --muted: #8b96ad;
+    --accent: #5b8cff;
+    --critical: #ff5d73;
+    --high: #ff9f43;
+    --medium: #ffd166;
+    --low: #7d8590;
+    --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), #8a63ff);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 20px; color: #fff;
+  }
+  h1 { font-size: 26px; margin: 0; letter-spacing: 0.5px; }
+  .tagline { color: var(--muted); margin: 0 0 28px 54px; font-size: 14px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 20px;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+  textarea {
+    width: 100%; min-height: 260px; resize: vertical;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  textarea:focus { outline: 1px solid var(--accent); }
+
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  button.secondary {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); font-weight: 500;
+  }
+
+  .status { margin: 14px 0 0; font-size: 14px; }
+  .status.error { color: var(--critical); }
+  .status.info { color: var(--muted); }
+
+  .summary { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .stat {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 20px; min-width: 110px;
+  }
+  .stat .num { font-size: 26px; font-weight: 700; }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .clean {
+    border: 1px solid var(--ok); background: rgba(62, 207, 142, 0.08);
+    color: var(--ok); border-radius: 10px; padding: 18px;
+    font-weight: 600; display: flex; gap: 10px; align-items: center;
+  }
+
+  .finding {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-left-width: 4px; border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .finding.critical { border-left-color: var(--critical); }
+  .finding.high { border-left-color: var(--high); }
+  .finding.medium { border-left-color: var(--medium); }
+  .finding.low { border-left-color: var(--low); }
+  .finding-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .finding-msg { margin: 8px 0; line-height: 1.5; }
+  .finding-rem { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
+  .finding-rem b { color: var(--text); }
+
+  .chip {
+    font: 12px ui-monospace, monospace; padding: 3px 10px;
+    border-radius: 999px; border: 1px solid var(--border);
+  }
+  .chip.rule { color: var(--accent); border-color: var(--accent); }
+  .chip.loc { color: var(--muted); }
+  .sev { font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; padding: 3px 10px; border-radius: 999px; }
+  .sev.critical { color: var(--critical); background: rgba(255, 93, 115, 0.12); }
+  .sev.high { color: var(--high); background: rgba(255, 159, 67, 0.12); }
+  .sev.medium { color: var(--medium); background: rgba(255, 209, 102, 0.12); }
+  .sev.low { color: var(--low); background: rgba(125, 133, 144, 0.15); }
+  .conf { color: var(--muted); font-size: 12px; }
+
+  .hidden { display: none; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 32px; line-height: 1.6; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
+    border: 2px solid var(--muted); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">AP</div>
+    <h1>AUDITPULSE</h1>
+  </header>
+  <p class="tagline">Soroban Security &amp; Quality Scanner — static analysis for Stellar Soroban smart contracts written in Rust.</p>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom: 12px;">
+      <button class="secondary" id="load-safe" type="button">Load safe example</button>
+      <button class="secondary" id="load-vulnerable" type="button">Load vulnerable example</button>
+      <span class="conf">examples/safe_vault.rs &middot; examples/vulnerable_vault.rs</span>
+    </div>
+    <textarea id="source" spellcheck="false" placeholder="Paste Rust / Soroban contract source here…"></textarea>
+    <div class="row" style="margin-top: 14px;">
+      <button id="scan" type="button">Run scan</button>
+      <span id="status" class="status" role="status"></span>
+    </div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="summary" id="summary"></div>
+    <div id="clean" class="clean hidden">✔ No findings — no issues matched the current rule set.</div>
+    <div id="findings"></div>
+  </div>
+
+  <footer>
+    AuditPulse currently performs source-text heuristic analysis (not Rust AST analysis);
+    AST and cross-file dataflow analysis are planned future work. Submitted source is only
+    analyzed in memory — it is never executed or written to disk.
+  </footer>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+
+  $("load-safe").addEventListener("click", () => loadExample("safe"));
+  $("load-vulnerable").addEventListener("click", () => loadExample("vulnerable"));
+  $("scan").addEventListener("click", runScan);
+
+  async function loadExample(name) {
+    setStatus("Loading example…", "info");
+    try {
+      const res = await fetch(`/api/examples/${name}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load example");
+      $("source").value = data.source;
+      setStatus(`Loaded ${data.name}`, "info");
+    } catch (err) {
+      setStatus(err.message, "error");
+    }
+  }
+
+  async function runScan() {
+    const source = $("source").value;
+    const button = $("scan");
+    button.disabled = true;
+    setStatus('<span class="spinner"></span> Scanning…', "info");
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      const report = await res.json();
+      if (!res.ok) throw new Error(report.error || `Scan failed (${res.status})`);
+      render(report);
+      setStatus("", "info");
+    } catch (err) {
+      setStatus(err.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function render(report) {
+    const { summary, findings } = report;
+    $("results").classList.remove("hidden");
+
+    $("summary").innerHTML = `
+      <div class="stat"><div class="num">${summary.findingCount}</div><div class="label">Findings</div></div>
+      <div class="stat"><div class="num">${summary.filesScanned}</div><div class="label">Files scanned</div></div>
+      ${Object.entries(summary.bySeverity).map(([sev, n]) =>
+        `<div class="stat"><div class="num" style="color:var(--${sev})">${n}</div><div class="label">${sev}</div></div>`
+      ).join("")}`;
+
+    const list = $("findings");
+    list.innerHTML = "";
+    $("clean").classList.toggle("hidden", findings.length !== 0);
+
+    for (const f of findings) {
+      const el = document.createElement("div");
+      el.className = `finding ${f.severity}`;
+      el.innerHTML = `
+        <div class="finding-head">
+          <span class="sev ${f.severity}">${f.severity}</span>
+          <span class="chip rule">${f.ruleId}</span>
+          ${f.confidence ? `<span class="conf">confidence: ${f.confidence}</span>` : ""}
+          <span class="chip loc">line ${f.location.line}${f.location["function"] ? ` · ${f.location["function"]}()` : ""}</span>
+        </div>
+        <p class="finding-msg"></p>
+        ${f.remediation ? `<p class="finding-rem"><b>Remediation:</b> </p>` : ""}`;
+      // Insert source-derived text via textContent, never innerHTML.
+      el.querySelector(".finding-msg").textContent = f.message;
+      if (f.remediation) {
+        el.querySelector(".finding-rem").append(f.remediation);
+      }
+      list.append(el);
+    }
+  }
+
+  function setStatus(text, kind) {
+    statusEl.innerHTML = text;
+    statusEl.className = `status ${kind}`;
+  }
+</script>
+</body>
+</html>
