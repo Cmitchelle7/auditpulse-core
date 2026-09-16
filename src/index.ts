@@ -1,54 +1,32 @@
 import fs from "fs";
-import { AuditEngine } from "./engine.js";
-import { createDefaultRegistry } from "./registry.js";
+import { main } from "./cli.js";
 
-const engine = new AuditEngine(createDefaultRegistry());
+// Library surface: the engine, registry, and rules stay importable exactly
+// as before, while the executable entry delegates to the CLI.
+export { AuditEngine } from "./engine.js";
+export { RuleRegistry, createDefaultRegistry } from "./registry.js";
+export type { Severity, Confidence, SourceLocation, Vulnerability, Rule, RuleId } from "./types.js";
+export { TOOL_NAME, TOOL_VERSION } from "./version.js";
 
-// TODO: Add AST-based macro expansion for complex Soroban attributes
-function main(filePath: string): void {
-  if (!fs.existsSync(filePath)) {
-    console.error(`Error: File not found: ${filePath}`);
-    process.exit(1);
-  }
+const argv = process.argv.slice(2);
 
-  const code = fs.readFileSync(filePath, "utf-8");
-  console.log(`\n${"=".repeat(60)}`);
-  console.log("AuditPulse Security Scanner Report");
-  console.log(`File: ${filePath}`);
-  console.log(`${"=".repeat(60)}\n`);
+/**
+ * Backwards-compatible entry: the documented command was
+ *   npx ts-node src/index.ts <file-path>
+ * A bare path-like argument (no subcommand) is therefore scanned directly;
+ * anything else goes through the V2 CLI commands (scan, report, sarif, init,
+ * help), which also produce the right error for unknown commands.
+ */
+const first = argv[0];
+const isCommand =
+  first === undefined ||
+  ["scan", "report", "sarif", "init", "help", "--help", "-h", "--version", "-v"].includes(first);
 
-  let total = 0;
-  for (const rule of engine.rules()) {
-    const findings = engine.runRule(rule.id, code);
-    total += findings.length;
+const looksLikePath =
+  !isCommand &&
+  (first!.endsWith(".rs") ||
+    first!.includes("/") ||
+    first!.includes("\\") ||
+    fs.existsSync(first!));
 
-    console.log(`\n[${rule.name.toUpperCase()}]`);
-    console.log(`Description: ${rule.description}`);
-
-    if (findings.length === 0) {
-      console.log("Status: ✓ No vulnerabilities found");
-      continue;
-    }
-
-    console.log(`Vulnerabilities found: ${findings.length}\n`);
-    for (const f of findings) {
-      console.log(
-        `  Line ${f.location.line}: [${f.severity.toUpperCase()}] ${f.message}`,
-      );
-    }
-  }
-
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`Total Vulnerabilities: ${total}`);
-  console.log(`${"=".repeat(60)}\n`);
-
-  if (total > 0) process.exit(1);
-}
-
-const targetFile = process.argv[2];
-if (!targetFile) {
-  console.error("Usage: npx ts-node src/index.ts <file-path>");
-  process.exit(1);
-}
-
-main(targetFile);
+process.exit(main(looksLikePath ? ["scan", ...argv] : argv));

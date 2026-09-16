@@ -1,0 +1,165 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { renderJson } from "../src/reporting/json";
+import { renderSarif } from "../src/reporting/sarif";
+import type { FileFinding } from "../src/scanner";
+import type { ScanReport } from "../src/scanner";
+
+function finding(overrides: Partial<FileFinding> & { file: string }): FileFinding {
+  return {
+    id: "AP-AUTH-001",
+    message: "Authorization-sensitive operations are not gated.",
+    severity: "critical",
+    confidence: "high",
+    location: { line: 7, function: "withdraw" },
+    remediation: "Add env.require_auth(&account).",
+    ...overrides,
+  } as FileFinding;
+}
+
+function report(findings: FileFinding[], filesScanned = 2): ScanReport {
+  return { target: "contracts", findings, filesScanned };
+}
+
+describe("JSON output", () => {
+  it("contains tool info, summary, and full finding fields", () => {
+    const log = JSON.parse(
+      renderJson(
+        report([
+          finding({ file: "a.rs" }),
+          finding({
+            id: "AP-DEBUG-001",
+            severity: "low",
+            confidence: undefined,
+            remediation: undefined,
+            message: "Debug macro left in production code.",
+            file: "b.rs",
+            location: { line: 9 },
+          }),
+        ]),
+      ),
+    ) as any;
+
+    expect(log.tool.name).toBe("auditpulse");
+    expect(typeof log.tool.version).toBe("string");
+    expect(log.tool.version).toMatch(/^\d+\.\d+\.\d+$/);
+
+    expect(log.summary.findingCount).toBe(2);
+    expect(log.summary.filesScanned).toBe(2);
+    expect(log.summary.bySeverity).toEqual({ critical: 1, low: 1 });
+
+    expect(log.findings).toHaveLength(2);
+    const [first, second] = log.findings;
+
+    expect(first.ruleId).toBe("AP-AUTH-001");
+    expect(first.severity).toBe("critical");
+    expect(first.confidence).toBe("high");
+    expect(first.message).toContain("not gated");
+    expect(first.location).toEqual({ file: "a.rs", line: 7, "function": "withdraw" });
+    expect(first.remediation).toContain("require_auth");
+
+    // Optional fields are omitted, never fabricated.
+    expect(second.confidence).toBeUndefined();
+    expect(second.remediation).toBeUndefined();
+    expect(second.location["function"]).toBeUndefined();
+  });
+
+  it("is stable: identical scans produce identical output", () => {
+    const findings = [
+      finding({ file: "a.rs", location: { line: 3 } }),
+      finding({ id: "AP-ERROR-001", severity: "high", message: "unwrap", file: "a.rs", location: { line: 4 } }),
+    ];
+    const once = renderJson(report(findings));
+    const twice = renderJson(report(findings));
+
+    expect(twice).toBe(once);
+  });
+
+  it("ends with a newline and has no findings on clean input", () => {
+    const out = renderJson(report([], 1));
+    expect(out.endsWith("\n")).toBe(true);
+    const log = JSON.parse(out) as any;
+    expect(log.findings).toEqual([]);
+    expect(log.summary.findingCount).toBe(0);
+  });
+});
+
+describe("SARIF output", () => {
+  const ruleDescriptions = new Map([
+    ["AP-AUTH-001", "Detects authorization-sensitive operations without require_auth."],
+    ["AP-DEBUG-001", "Detects debug macros left in production code."],
+  ]);
+
+  it("produces a valid SARIF 2.1.0 skeleton", () => {
+    const log = JSON.parse(
+      renderSarif(
+        report([finding({ file: "src/a.rs", location: { line: 12 } })]),
+        { ruleDescriptions },
+      ),
+    ) as any;
+
+    expect(log.version).toBe("2.1.0");
+    expect(log.$schema).toContain("sarif");
+    expect(log.runs).toHaveLength(1);
+
+    const driver = log.runs[0].tool.driver;
+    expect(driver.name).toBe("auditpulse");
+    expect(typeof driver.version).toBe("string");
+    expect(driver.rules).toHaveLength(1);
+    expect(driver.rules[0].id).toBe("AP-AUTH-001");
+    expect(driver.rules[0].shortDescription.text).toContain("require_auth");
+  });
+
+  it("maps severities to SARIF levels", () => {
+    const log = JSON.parse(
+      renderSarif(
+        report([
+          finding({ id: "AP-AUTH-001", severity: "critical", file: "a.rs" }),
+          finding({ id: "AP-ARITH-001", severity: "medium", file: "a.rs" }),
+          finding({ id: "AP-DEBUG-001", severity: "low", file: "a.rs" }),
+        ]),
+        { ruleDescriptions },
+      ),
+    ) as any;
+
+    const levels = Object.fromEntries(
+      log.runs[0].results.map((r: any) => [r.ruleId, r.level]),
+    );
+    expect(levels["AP-AUTH-001"]).toBe("error");
+    expect(levels["AP-ARITH-001"]).toBe("warning");
+    expect(levels["AP-DEBUG-001"]).toBe("note");
+  });
+
+  it("points results at the right file and start line", () => {
+    const log = JSON.parse(
+      renderSarif(report([finding({ file: "src/lib.rs", location: { line: 21 } })]), {
+        ruleDescriptions,
+      }),
+    ) as any;
+
+    const result = log.runs[0].results[0];
+    expect(result.ruleId).toBe("AP-AUTH-001");
+    expect(result.message.text).toContain("not gated");
+    expect(result.locations[0].physicalLocation.artifactLocation.uri).toBe("src/lib.rs");
+    expect(result.locations[0].physicalLocation.region.startLine).toBe(21);
+  });
+
+  it("includes one rule entry per rule id and emits stable text", () => {
+    const findings = [
+      finding({ file: "a.rs" }),
+      finding({ file: "a.rs", location: { line: 8 } }),
+      finding({ id: "AP-DEBUG-001", severity: "low", file: "b.rs", message: "dbg!" }),
+    ];
+
+    const text = renderSarif(report(findings), { ruleDescriptions });
+    const log = JSON.parse(text) as any;
+
+    expect(log.runs[0].tool.driver.rules.map((r: any) => r.id)).toEqual([
+      "AP-AUTH-001",
+      "AP-DEBUG-001",
+    ]);
+    expect(renderSarif(report(findings), { ruleDescriptions })).toBe(text);
+  });
+});
