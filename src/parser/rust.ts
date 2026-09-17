@@ -119,9 +119,12 @@ function toAstFunction(node: import("tree-sitter").SyntaxNode): ScannedFunction 
   return {
     name: nameNode.text,
     line: (fnToken ?? node).startPosition.row + 1,
+    // Tree-sitter columns are 0-based character offsets; report 1-based.
+    column: (fnToken ?? node).startPosition.column + 1,
     endLine: node.endPosition.row + 1,
     body,
     bodyInner: open >= 0 ? body.slice(open + 1) : "",
     bodyLine,
+    bodyColumn: bodyNode.startPosition.column + 1,
   };
 }

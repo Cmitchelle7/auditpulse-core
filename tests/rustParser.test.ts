@@ -142,4 +142,74 @@ describe("extractFunctions", () => {
     expect(names).toContain("ok");
     expect(names).toContain("also_ok");
   });
+
+  it("reports exact fn-keyword and body-brace positions", () => {
+    const code = [
+      "impl Vault {", // 1
+      "  pub fn deposit(env: Env) {", // 2
+      "    env.require_auth(&user);", // 3
+      "  }", // 4
+      "", // 5
+      "fn helper(x: i128) -> i128 { x + 1 }", // 6
+      "}", // 7
+    ].join("\n");
+    const fns = extractFunctions(parseRust(code)!.tree);
+
+    expect(fns).toHaveLength(2);
+    const [deposit, helper] = fns as [
+      { name: string; line: number; column: number; bodyLine: number; bodyColumn: number; endLine: number },
+      typeof fns[0],
+    ];
+    expect(deposit.name).toBe("deposit");
+    expect(deposit.line).toBe(2);
+    expect(deposit.column).toBe(7); // `fn` after "  pub "
+    expect(deposit.bodyLine).toBe(2);
+    expect(deposit.bodyColumn).toBe(28); // `{` ends the line
+    expect(deposit.endLine).toBe(4);
+
+    expect(helper.name).toBe("helper");
+    expect(helper.line).toBe(6);
+    expect(helper.column).toBe(1);
+    expect(helper.bodyLine).toBe(6);
+    expect(helper.bodyColumn).toBe(28);
+    expect(helper.endLine).toBe(6);
+  });
+
+  it("is unaffected by comments and strings when placing columns", () => {
+    const code = [
+      "// fn phantom() { }", // 1
+      "fn real() {", // 2
+      "  // } brace in comment", // 3
+      "  let s = \"} {\";", // 4
+      "}", // 5
+    ].join("\n");
+    const fns = extractFunctions(parseRust(code)!.tree);
+
+    expect(fns.map((fn) => fn.name)).toEqual(["real"]);
+    expect(fns[0]?.line).toBe(2);
+    expect(fns[0]?.column).toBe(1);
+    expect(fns[0]?.bodyLine).toBe(2);
+    expect(fns[0]?.bodyColumn).toBe(11);
+    expect(fns[0]?.endLine).toBe(5);
+  });
+
+  it("keeps multi-line signatures anchored to the fn keyword", () => {
+    const code = [
+      "fn multi(", // 1
+      "  a: i128,", // 2
+      "  b: i128,", // 3
+      ") -> i128 {", // 4
+      "  a + b", // 5
+      "}", // 6
+    ].join("\n");
+    const fns = extractFunctions(parseRust(code)!.tree);
+
+    expect(fns).toHaveLength(1);
+    const fn = fns[0]!;
+    expect(fn.name).toBe("multi");
+    expect(fn.line).toBe(1);
+    expect(fn.column).toBe(1);
+    expect(fn.bodyLine).toBe(4); // the line holding the opening brace
+    expect(fn.endLine).toBe(6);
+  });
 });
