@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { AuditEngine } from "../src/engine";
 import { createDefaultRegistry } from "../src/registry";
+import { parseRust, extractFunctions } from "../src/parser/rust";
 import type { Vulnerability } from "../src/types";
 
 const FIXTURES_ROOT = path.join(
@@ -111,6 +112,47 @@ describe("fixtures/edge-cases", () => {
       expect.arrayContaining(["AP-ARITH-001", "AP-AUTH-001"]),
     );
   });
+
+  it("structural_ast.rs extracts exact function boundaries from the AST", () => {
+    const code = fs.readFileSync(
+      path.join(FIXTURES_ROOT, "edge-cases", "structural_ast.rs"),
+      "utf-8",
+    );
+    const parsed = parseRust(code);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.hasError).toBe(false);
+    // Braces in the doc comment and string literal must not shift or split
+    // function boundaries, and the doc comment must not invent `fake`.
+    expect(
+      extractFunctions(parsed!.tree).map((fn) => ({
+        name: fn.name,
+        line: fn.line,
+        endLine: fn.endLine,
+      })),
+    ).toEqual([
+      { name: "describe", line: 17, endLine: 19 },
+      { name: "payout", line: 21, endLine: 29 },
+    ]);
+  });
+
+  it("structural_ast.rs locates findings precisely despite structural noise", () => {
+    const findings = scanFixture("edge-cases/structural_ast.rs");
+
+    const auth = findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth?.location.function).toBe("payout");
+    expect(auth?.location.line).toBe(21);
+
+    const arith = findings.find((f) => f.id === "AP-ARITH-001");
+    expect(arith?.location.function).toBe("payout");
+    expect(arith?.location.line).toBe(24);
+
+    const ids = idsOf(findings);
+    expect(ids).toContain("AP-STORAGE-001");
+    expect(ids).not.toContain("AP-CALL-001");
+    expect(ids).not.toContain("AP-UPG-001");
+    expect(ids).not.toContain("AP-ERROR-001");
+  });
 });
 
 describe("fixtures/workspaces", () => {
@@ -138,6 +180,7 @@ describe("finding quality across all fixtures", () => {
     "edge-cases/mixed_findings.rs",
     "edge-cases/formatting_variants.rs",
     "edge-cases/nested_blocks.rs",
+    "edge-cases/structural_ast.rs",
     "workspaces/vault-set/vault-core.rs",
     "workspaces/vault-set/vault-host.rs",
   ];
