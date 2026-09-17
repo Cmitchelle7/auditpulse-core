@@ -4,6 +4,7 @@ import UncheckedArithmeticPlugin from "../src/plugins/uncheckedArithmetic";
 import UnvalidatedExternalCallPlugin from "../src/plugins/unvalidatedExternalCall";
 import UnprotectedUpgradePlugin from "../src/plugins/unprotectedUpgrade";
 import DebugStatementsPlugin from "../src/plugins/debugStatements";
+import UnwrapUsagePlugin from "../src/plugins/unwrapUsage";
 import { AuditEngine } from "../src/engine";
 import { createDefaultRegistry } from "../src/registry";
 import type { Vulnerability } from "../src/types";
@@ -388,5 +389,48 @@ describe("finding location precision", () => {
     expect(findings[0]?.location.line).toBe(2);
     expect(findings[0]?.location.column).toBeUndefined();
     expect(findings[0]?.location.function).toBe("upgrade");
+  });
+
+  it("whole-file rules attach the enclosing function and fn column per finding", () => {
+    const code = [
+      "impl Vault {", // 1
+      "  fn balance(env: Env) -> i128 {", // 2
+      "    env.storage().persistent().get(&K).unwrap()", // 3
+      "  }", // 4
+      "", // 5
+      "  fn noisy(env: Env) {", // 6
+      "    dbg!(env);", // 7
+      "    env.storage().persistent().set(&K, &1);", // 8
+      "  }", // 9
+      "}", // 10
+    ].join("\n");
+
+    const engine = new AuditEngine(createDefaultRegistry());
+    const of = (id: string) => engine.run(code).filter((f) => f.id === id);
+
+    const error = of("AP-ERROR-001");
+    expect(error).toHaveLength(1);
+    expect(error[0]?.location).toEqual({ line: 3, column: 3, function: "balance" });
+
+    const debug = of("AP-DEBUG-001");
+    expect(debug).toHaveLength(1);
+    expect(debug[0]?.location).toEqual({ line: 7, column: 3, function: "noisy" });
+
+    // File-level TTL finding points at the first storage access, inside
+    // `balance`.
+    const storage = of("AP-STORAGE-001");
+    expect(storage).toHaveLength(1);
+    expect(storage[0]?.location).toEqual({ line: 3, column: 3, function: "balance" });
+  });
+
+  it("whole-file rules report line-only locations when the AST is unavailable", () => {
+    // The engine passes null on malformed input; scan() is the standalone
+    // text path. Either way no column or function may be fabricated.
+    const code = "fn broken( {\n  let x = opt.unwrap();\n";
+
+    const findings = UnwrapUsagePlugin.scan(code);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location).toEqual({ line: 2 });
   });
 });

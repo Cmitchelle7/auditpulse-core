@@ -62,6 +62,40 @@ export function functionLocation(fn: ScannedFunction): SourceLocation {
 }
 
 /**
+ * The scanned function whose body contains the 1-based `line`, or null.
+ * Declarations cannot nest, so at most one function matches.
+ */
+function functionAtLine(
+  fns: ScannedFunction[],
+  line: number,
+): ScannedFunction | null {
+  for (const fn of fns) {
+    if (fn.bodyLine <= line && line <= fn.endLine) {
+      return fn;
+    }
+  }
+  return null;
+}
+
+/**
+ * Best location for a whole-file match on `line`: the line itself, plus the
+ * enclosing function's name and `fn`-keyword column when the AST extraction
+ * is available. Without it (null), only the line is reported.
+ */
+export function locateLine(
+  functions: ScannedFunction[] | null,
+  line: number,
+): SourceLocation {
+  const fn = functions === null ? null : functionAtLine(functions, line);
+  if (fn === null) {
+    return { line };
+  }
+  return fn.column === undefined
+    ? { line, function: fn.name }
+    : { line, column: fn.column, function: fn.name };
+}
+
+/**
  * Extracts top-level functions by brace counting, one nesting level per
  * function. `macro_rules!` blocks are skipped as a unit (brace-based, no
  * macro internals are parsed).

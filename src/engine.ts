@@ -18,6 +18,22 @@ export function isFunctionRule(rule: Rule): rule is Rule & FunctionRule {
 }
 
 /**
+ * Optional capability for rules that scan whole files but want the shared
+ * AST extraction to refine their locations. They receive the same
+ * per-file extraction as function rules; null means the parser was
+ * unavailable or the source was malformed, and the rule falls back to its
+ * own source-text scan.
+ */
+export interface AstAwareRule {
+  /** Scans the whole file with the shared extraction (or null) available. */
+  scanCode(code: string, functions: ScannedFunction[] | null): Vulnerability[];
+}
+
+export function isAstAwareRule(rule: Rule): rule is Rule & AstAwareRule {
+  return typeof (rule as Partial<AstAwareRule>).scanCode === "function";
+}
+
+/**
  * Runs registered rules over source code and aggregates their findings.
  * Holds no state beyond the registry, so one engine can scan many files.
  */
@@ -55,6 +71,10 @@ export class AuditEngine {
       if (disabled.has(rule.id)) continue;
       if (isFunctionRule(rule)) {
         findings.push(...runFunctionRule(rule, code, astFunctions));
+        continue;
+      }
+      if (isAstAwareRule(rule)) {
+        findings.push(...rule.scanCode(code, astFunctions).map((f) => stampRuleId(rule, f)));
         continue;
       }
       findings.push(...this.runRule(rule.id, code));
