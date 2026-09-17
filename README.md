@@ -1,6 +1,6 @@
 # auditpulse-core
 
-Lightweight static analysis security scanner for Soroban (Stellar) smart contracts written in Rust.
+Lightweight static analysis security scanner for Soroban (Stellar) smart contracts written in Rust. Function structure (names, boundaries, source locations) is derived from Tree-sitter Rust parsing; the checks themselves are conservative source-text heuristics.
 
 ## Checks
 
@@ -36,14 +36,28 @@ detected pattern is actually problematic. The two are independent:
 fixtures/
   vulnerable/    # each file triggers at least one rule
   safe/          # each file must produce zero findings
-  edge-cases/    # comments/strings, odd formatting, nested blocks, coexisting findings
+  edge-cases/    # comments/strings, odd formatting, nested blocks, structural braces, coexisting findings
   workspaces/    # multi-module examples (per-file scanning semantics)
 ```
 
+### Rust parsing (structural analysis)
+
+AuditPulse parses each Rust file once with Tree-sitter (`tree-sitter-rust`) to
+extract function declarations: name, start/end line, and body boundaries.
+Rules that analyze functions receive this AST-derived structure, so locations
+stay exact even when comments or string literals contain braces. The parser is
+isolated in `src/parser/rust.ts`: if the native module cannot load, or a file
+has syntax errors that prevent reliable extraction, scanning falls back to the
+original source-text extraction and continues without losing findings. This is
+structural parsing only — AuditPulse does not perform Rust type analysis,
+semantic analysis, or cross-file dataflow.
+
 ### Limitations
 
-AuditPulse performs conservative source-text analysis, **not** Rust AST
-analysis, and never performs cross-file dataflow analysis. Known consequences:
+Function structure comes from Tree-sitter parsing (see above); the checks
+remain conservative source-text heuristics over those function bodies. There
+is **no** Rust semantic or type analysis, no compiler-equivalent analysis, and
+never any cross-file dataflow. Known consequences:
 
 * `AP-ARITH-001` evaluates arithmetic line-by-line; checked math in a helper
   called from another line is not connected, and complex expression chains may
@@ -218,9 +232,9 @@ curl -s -X POST http://127.0.0.1:4646/api/scan \
 
 Notes:
 
-* Submitted source is analyzed **in memory** by the existing source-text heuristic rules and is never executed or written to disk.
+* Submitted source is analyzed **in memory** by the same rules the CLI uses (Tree-sitter function structure plus source-text heuristics) and is never executed or written to disk.
 * Request bodies are capped (256 KB) and invalid input returns a JSON error with a 4xx status.
-* The analyzer is source-text heuristic analysis — **not** AST analysis, and there is no cross-file dataflow. See [Limitations](#limitations).
+* Function structure comes from Tree-sitter Rust parsing; the checks are source-text heuristics, not semantic analysis, and there is no cross-file dataflow. See [Limitations](#limitations).
 
 ## CI / GitHub Actions
 
@@ -273,7 +287,7 @@ Total findings: 3 (1 critical, 2 high)
 
 ## Development
 
-Built with TypeScript, powered by source-text pattern rules, and tested via Vitest.
+Built with TypeScript: Tree-sitter provides function structure, source-text pattern rules perform the checks, and Vitest tests it all.
 
 ```bash
 # Type check
