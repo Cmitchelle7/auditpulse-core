@@ -36,8 +36,14 @@ function findingLines(finding: FileFinding): string[] {
   const severity = finding.severity.toUpperCase();
   const confidence = finding.confidence?.toUpperCase() ?? "UNKNOWN";
 
+  // Column appears only when a rule verified it; the plain line otherwise.
+  const where =
+    finding.location.column !== undefined
+      ? `${finding.location.line}:${finding.location.column}`
+      : `${finding.location.line}`;
+
   const lines = [
-    `  Line ${finding.location.line}: [${finding.id}] [${severity}] [confidence: ${confidence}]`,
+    `  Line ${where}: [${finding.id}] [${severity}] [confidence: ${confidence}]`,
     `    ${finding.message}`,
   ];
 
