@@ -1,5 +1,4 @@
-import type { Rule, Vulnerability } from "../types";
-import type { RustAstFunction } from "../parser/rust";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, removeComments } from "../utils/rust.js";
 
@@ -37,7 +36,7 @@ export class UnprotectedUpgradePlugin implements Rule, FunctionRule {
   }
 
   /** The engine passes raw functions; comments are stripped before matching. */
-  scanFunction(fn: RustAstFunction): Vulnerability[] {
+  scanFunction(fn: ScannedFunction): Vulnerability[] {
     if (!ADMIN_FUNCTION_NAME.test(fn.name)) {
       return [];
     }

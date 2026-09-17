@@ -1,5 +1,4 @@
-import type { Rule, Vulnerability } from "../types";
-import type { RustAstFunction } from "../parser/rust";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
@@ -43,7 +42,7 @@ export class UncheckedArithmeticPlugin implements Rule, FunctionRule {
   }
 
   /** The engine passes raw functions; sanitize to keep line numbers honest. */
-  scanFunction(fn: RustAstFunction): Vulnerability[] {
+  scanFunction(fn: ScannedFunction): Vulnerability[] {
     const clean = sanitizeKeepLines(fn.body);
     // The signature is skipped (generic bounds like `T: Add + Sub` are not
     // arithmetic), so realign body lines through the opening brace.

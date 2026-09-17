@@ -31,6 +31,8 @@ export function removeCommentsKeepLines(code: string): string {
     );
 }
 
+import type { ScannedFunction } from "../types";
+
 /**
  * Blanks out the contents of string/char literals (keeping the quotes and
  * line count) so patterns inside string text, e.g. `"a.unwrap()"`, are not
@@ -48,27 +50,14 @@ export function sanitizeKeepLines(code: string): string {
   return blankStringContents(removeCommentsKeepLines(code));
 }
 
-export interface RustFunction {
-  /** 1-based line number of the `fn` keyword line. */
-  line: number;
-  /** 1-based line number of the closing brace of the body. */
-  endLine: number;
-  /** Function name. */
-  name: string;
-  /** Full source of the function, from the `fn` line through the closing brace. */
-  body: string;
-  /** Text after the opening brace of the body, closing brace included. */
-  bodyInner: string;
-}
-
 /**
  * Extracts top-level functions by brace counting, one nesting level per
  * function. `macro_rules!` blocks are skipped as a unit (brace-based, no
  * macro internals are parsed).
  */
-export function extractRustFunctions(code: string): RustFunction[] {
+export function extractRustFunctions(code: string): ScannedFunction[] {
   const lines = code.split("\n");
-  const fns: RustFunction[] = [];
+  const fns: ScannedFunction[] = [];
   let current: { line: number; name: string; body: string[]; depth: number } | null =
     null;
 
@@ -116,6 +105,7 @@ export function extractRustFunctions(code: string): RustFunction[] {
         name: current.name,
         body,
         bodyInner: open >= 0 ? body.slice(open + 1) : "",
+        bodyLine: current.line + (open >= 0 ? body.slice(0, open).split("\n").length - 1 : 0),
       });
       current = null;
     }

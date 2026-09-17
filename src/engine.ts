@@ -1,6 +1,5 @@
-import type { Rule, RuleId, Vulnerability } from "./types";
+import type { Rule, RuleId, ScannedFunction, Vulnerability } from "./types";
 import type { RuleRegistry } from "./registry";
-import type { RustAstFunction } from "./parser/rust";
 import { extractRustFunctionsAst } from "./parser/rust.js";
 
 /**
@@ -10,8 +9,8 @@ import { extractRustFunctionsAst } from "./parser/rust.js";
  * source-text scan), so the tree is parsed once per file, not once per rule.
  */
 export interface FunctionRule {
-  /** Scans one function; receives the AST-derived boundaries and body. */
-  scanFunction(fn: RustAstFunction): Vulnerability[];
+  /** Scans one function; receives the boundaries and body of its declaration. */
+  scanFunction(fn: ScannedFunction): Vulnerability[];
 }
 
 export function isFunctionRule(rule: Rule): rule is Rule & FunctionRule {
@@ -62,7 +61,7 @@ export class AuditEngine {
 function runFunctionRule(
   rule: Rule & FunctionRule,
   code: string,
-  astFunctions: RustAstFunction[] | null,
+  astFunctions: ScannedFunction[] | null,
 ): Vulnerability[] {
   if (astFunctions === null) {
     return rule.scan(code).map((finding) => stampRuleId(rule, finding));

@@ -1,5 +1,4 @@
-import type { Rule, Vulnerability } from "../types";
-import type { RustAstFunction } from "../parser/rust";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
@@ -19,7 +18,7 @@ export class MissingRequireAuthPlugin implements Rule, FunctionRule {
    * The engine passes functions extracted from raw source; comments and
    * string contents are blanked here so only executable text is judged.
    */
-  scanFunction(fn: RustAstFunction): Vulnerability[] {
+  scanFunction(fn: ScannedFunction): Vulnerability[] {
     const clean = sanitizeKeepLines(fn.body);
     const brace = clean.indexOf("{");
     const body = brace >= 0 ? clean.slice(brace) : clean;

@@ -1,5 +1,4 @@
-import type { Rule, Vulnerability } from "../types";
-import type { RustAstFunction } from "../parser/rust";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
@@ -25,7 +24,7 @@ export class UnvalidatedExternalCallPlugin implements Rule, FunctionRule {
   }
 
   /** The engine passes raw functions; sanitize before pattern matching. */
-  scanFunction(fn: RustAstFunction): Vulnerability[] {
+  scanFunction(fn: ScannedFunction): Vulnerability[] {
     const body = sanitizeKeepLines(fn.bodyInner);
     const sensitive =
       /client\s*\.\s*(?:transfer|transfer_from|burn|mint|clawback|set_authorized|set_admin)\s*\(/.test(

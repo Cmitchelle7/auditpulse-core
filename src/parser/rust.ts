@@ -1,4 +1,5 @@
 import { createRequire } from "module";
+import type { ScannedFunction } from "../types";
 
 /**
  * Isolated Tree-sitter Rust parser (AP-005).
@@ -20,20 +21,6 @@ export interface RustParseResult {
   tree: import("tree-sitter").Tree;
   /** True when the source has syntax errors; the tree is still usable. */
   hasError: boolean;
-}
-
-/** A function declaration found in the syntax tree. */
-export interface RustAstFunction {
-  /** Function name from the declaration's `name` field. */
-  name: string;
-  /** 1-based line of the first token of the declaration (attributes excluded). */
-  line: number;
-  /** 1-based line of the closing brace of the body. */
-  endLine: number;
-  /** Full declaration text, from the first token through the closing brace. */
-  body: string;
-  /** Text after the opening brace of the body, closing brace included. */
-  bodyInner: string;
 }
 
 const nodeRequire = createRequire(import.meta.url);
@@ -73,12 +60,12 @@ export function parseRust(code: string): RustParseResult | null {
 }
 
 /**
- * Extracts function declarations from a parsed tree: name, start line, end
- * line, and body boundaries. Declared function bodies are not descended into
- * (nested `function_item`s cannot occur inside a body), so each declaration
- * is visited exactly once.
+ * Extracts function declarations from a parsed tree: name, boundaries, and
+ * body range. Declared function bodies are not descended into (nested
+ * `function_item`s cannot occur inside a body), so each declaration is
+ * visited exactly once.
  */
-export function extractFunctions(tree: import("tree-sitter").Tree): RustAstFunction[] {
+export function extractFunctions(tree: import("tree-sitter").Tree): ScannedFunction[] {
   return collectFunctions(tree.rootNode, []);
 }
 
@@ -87,7 +74,7 @@ export function extractFunctions(tree: import("tree-sitter").Tree): RustAstFunct
  * Returns null when the parser is unavailable or the tree has syntax
  * errors, so callers can fall back to their source-text analysis.
  */
-export function extractRustFunctionsAst(code: string): RustAstFunction[] | null {
+export function extractRustFunctionsAst(code: string): ScannedFunction[] | null {
   const parsed = parseRust(code);
   if (parsed === null || parsed.hasError) {
     return null;
@@ -97,8 +84,8 @@ export function extractRustFunctionsAst(code: string): RustAstFunction[] | null 
 
 function collectFunctions(
   node: import("tree-sitter").SyntaxNode,
-  out: RustAstFunction[],
-): RustAstFunction[] {
+  out: ScannedFunction[],
+): ScannedFunction[] {
   for (const child of node.children) {
     if (child.type === "function_item") {
       const fn = toAstFunction(child);
@@ -110,7 +97,7 @@ function collectFunctions(
   return out;
 }
 
-function toAstFunction(node: import("tree-sitter").SyntaxNode): RustAstFunction | null {
+function toAstFunction(node: import("tree-sitter").SyntaxNode): ScannedFunction | null {
   const nameNode = node.childForFieldName("name");
   const bodyNode = node.childForFieldName("body");
   if (nameNode === null || bodyNode === null) {
@@ -123,11 +110,18 @@ function toAstFunction(node: import("tree-sitter").SyntaxNode): RustAstFunction 
   const fnToken = node.children.find((child) => child.type === "fn");
   const body = node.text;
   const open = body.indexOf("{");
+  // 1-based line of the body's opening brace, derived from the same text so
+  // it stays consistent with `body`.
+  const bodyLine =
+    open >= 0
+      ? (fnToken ?? node).startPosition.row + 1 + body.slice(0, open).split("\n").length - 1
+      : node.endPosition.row + 1;
   return {
     name: nameNode.text,
     line: (fnToken ?? node).startPosition.row + 1,
     endLine: node.endPosition.row + 1,
     body,
     bodyInner: open >= 0 ? body.slice(open + 1) : "",
+    bodyLine,
   };
 }

@@ -17,6 +17,31 @@ export interface Vulnerability {
   remediation?: string;
 }
 
+/**
+ * A function structure shared by the AST parser and the source-text
+ * fallback, so rules see one shape regardless of how it was produced.
+ * Positions are 1-based; columns count characters from the start of the
+ * line and are omitted when not reliably known.
+ */
+export interface ScannedFunction {
+  /** Function name from the declaration. */
+  name: string;
+  /** 1-based line of the `fn` keyword (attributes excluded). */
+  line: number;
+  /** 1-based column of the `fn` keyword; omitted in text-fallback extraction. */
+  column?: number;
+  /** 1-based line of the closing brace of the body. */
+  endLine: number;
+  /** Full declaration text, from the `fn` token through the closing brace. */
+  body: string;
+  /** Text after the opening brace of the body, closing brace included. */
+  bodyInner: string;
+  /** 1-based line of the body's opening brace. */
+  bodyLine: number;
+  /** 1-based column of the body's opening brace; omitted in text-fallback extraction. */
+  bodyColumn?: number;
+}
+
 /** Stable, machine-readable rule identifier, e.g. "AP-AUTH-001". */
 export type RuleId = string;
 
