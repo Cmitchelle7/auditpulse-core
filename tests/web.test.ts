@@ -154,4 +154,14 @@ describe("scanSource (in-memory, no HTTP)", () => {
     expect(report.summary.findingCount).toBeGreaterThan(0);
     expect(scanSource(SAFE).summary.findingCount).toBe(0);
   });
+
+  it("carries precise locations (line, column, function) into JSON output", () => {
+    const report = scanSource(VULNERABLE);
+
+    const auth = report.findings.find((f) => f.ruleId === "AP-AUTH-001");
+    expect(auth).toBeDefined();
+    expect(auth?.location.line).toBeGreaterThan(0);
+    expect(auth?.location.function).toBe("withdraw");
+    expect(auth?.location.column).toBeGreaterThan(0);
+  });
 });

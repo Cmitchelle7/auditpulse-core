@@ -167,6 +167,44 @@ describe("scanTarget: directory", () => {
   });
 });
 
+describe("location regression through scanTarget", () => {
+  it("attaches file, line, column and function to findings on well-formed source", () => {
+    write("vault.rs", VULNERABLE);
+    const cwdBackup = process.cwd();
+    process.chdir(tmp);
+    try {
+      const report = scanTarget("vault.rs", engine(), defaultConfig());
+
+      const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+      expect(auth).toBeDefined();
+      expect(auth?.file).toBe("vault.rs");
+      expect(auth?.location.line).toBeGreaterThan(0);
+      expect(auth?.location.function).toBe("withdraw");
+      // Tree-sitter is available in this repo, so the AST-precise column
+      // must reach the file-scan layer.
+      expect(auth?.location.column).toBeGreaterThan(0);
+    } finally {
+      process.chdir(cwdBackup);
+    }
+  });
+
+  it("keeps every finding well-formed across a directory scan", () => {
+    write("src/a.rs", VULNERABLE);
+    write("src/b.rs", VULNERABLE);
+
+    const report = scanTarget(tmp, engine(), defaultConfig());
+
+    expect(report.filesScanned).toBe(2);
+    for (const finding of report.findings) {
+      expect(finding.file.length).toBeGreaterThan(0);
+      expect(finding.location.line).toBeGreaterThan(0);
+      if (finding.location.column !== undefined) {
+        expect(finding.location.column).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
 describe("sortFindings", () => {
   it("orders by file, then line, then rule id", () => {
     const base = { message: "m", severity: "high" as const };
