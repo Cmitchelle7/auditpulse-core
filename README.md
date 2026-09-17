@@ -1,6 +1,6 @@
 # auditpulse-core
 
-Lightweight static analysis security scanner for Soroban (Stellar) smart contracts written in Rust. Function structure (names, boundaries, source locations) is derived from Tree-sitter Rust parsing; the checks themselves are conservative source-text heuristics.
+Lightweight static analysis security scanner for Soroban (Stellar) smart contracts written in Rust. Function structure (names, boundaries, source locations) is derived from Tree-sitter Rust parsing, so findings identify the enclosing function and, where the AST can verify it, the exact `fn`-keyword line and column; the checks themselves are conservative source-text heuristics.
 
 ## Checks
 
@@ -43,14 +43,15 @@ fixtures/
 ### Rust parsing (structural analysis)
 
 AuditPulse parses each Rust file once with Tree-sitter (`tree-sitter-rust`) to
-extract function declarations: name, start/end line, and body boundaries.
-Rules that analyze functions receive this AST-derived structure, so locations
-stay exact even when comments or string literals contain braces. The parser is
+extract function declarations: name, `fn`-keyword line and column, body brace
+position, and end line. Rules receive this AST-derived structure, so findings
+stay exact even when comments or string literals contain braces, and columns
+are reported only when the AST verified them — never invented. The parser is
 isolated in `src/parser/rust.ts`: if the native module cannot load, or a file
 has syntax errors that prevent reliable extraction, scanning falls back to the
-original source-text extraction and continues without losing findings. This is
-structural parsing only — AuditPulse does not perform Rust type analysis,
-semantic analysis, or cross-file dataflow.
+original source-text extraction (line and function only) and continues without
+losing findings. This is structural parsing only — AuditPulse does not perform
+Rust type analysis, semantic analysis, or cross-file dataflow.
 
 ### Limitations
 
@@ -126,8 +127,10 @@ recursively for Rust files, skipping `node_modules`, `dist`, `target`, `.git`
 and similar generated/unrelated directories, plus anything listed under
 `exclude` in the configuration. Files are visited in deterministic (sorted)
 order and each file is scanned independently; there is no cross-file
-dataflow. Findings always identify their file and line; column and function
-details appear only when the rule can compute them reliably.
+dataflow. Each file is parsed once and all rules share that structure.
+Findings always identify their file and line; column and function details
+appear only when the rule can compute them reliably (with the AST available,
+function-anchored findings point at the `fn` keyword's line and column).
 
 ### JSON output
 
@@ -151,6 +154,7 @@ node dist/index.js scan contracts/SampleVault.rs --format json
       "location": {
         "file": "contracts/SampleVault.rs",
         "line": 23,
+        "column": 11,
         "function": "withdraw"
       },
       "confidence": "high",
@@ -170,7 +174,8 @@ node dist/index.js sarif contracts/SampleVault.rs > auditpulse.sarif
 ```
 
 Emits SARIF 2.1.0 with the tool driver, rule metadata (ids, descriptions,
-levels) and one result per finding with file URI and start line, ready for
+levels) and one result per finding with file URI and start line (plus start
+column when the rule verified it), ready for
 upload to GitHub Code Scanning.
 
 ## Configuration
@@ -271,7 +276,7 @@ Files scanned: 1
 ============================================================
 
 contracts/SampleVault.rs
-  Line 23: [AP-AUTH-001] [CRITICAL] [confidence: HIGH]
+  Line 23:11: [AP-AUTH-001] [CRITICAL] [confidence: HIGH]
     Authorization-sensitive operations in function 'withdraw' are not gated by require_auth. ...
     Function: withdraw
     Remediation: Add env.require_auth(&account) for the account authorized to perform the sensitive operation.
