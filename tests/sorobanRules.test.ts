@@ -168,15 +168,28 @@ describe("UnvalidatedExternalCallPlugin (AP-CALL-001)", () => {
     expect(UnvalidatedExternalCallPlugin.scan(code)).toHaveLength(0);
   });
 
-  it("ignores calls carrying a validated token id argument", () => {
-    const code = `
+  it("ignores calls carrying an explicitly checked token id", () => {
+    // AP-008: validation is judged positionally and by evidence, not by the
+    // bare presence of an `*_id` name. A checked id before the call is a
+    // boundary; an unchecked one is reported at medium confidence.
+    const checked = `
+      fn sweep(env: Env, token_id: Address, to: Address, amount: i128) {
+        assert!(token_id == &expected_token);
+        let client = token::Client::new(&env, &token_id);
+        client.transfer(&env.current_contract_address(), &to, &amount);
+      }
+    `;
+    const unchecked = `
       fn sweep(env: Env, token_id: Address, to: Address, amount: i128) {
         let client = token::Client::new(&env, &token_id);
         client.transfer(&env.current_contract_address(), &to, &amount);
       }
     `;
 
-    expect(UnvalidatedExternalCallPlugin.scan(code)).toHaveLength(0);
+    expect(UnvalidatedExternalCallPlugin.scan(checked)).toHaveLength(0);
+    const findings = UnvalidatedExternalCallPlugin.scan(unchecked);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.confidence).toBe("medium");
   });
 
   it("ignores ordinary functions without external calls", () => {
