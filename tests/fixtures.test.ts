@@ -58,6 +58,18 @@ describe("fixtures/vulnerable", () => {
 
     expect(findings.filter((f) => f.id === "AP-DEBUG-001")).toHaveLength(3);
   });
+
+  it("auth_after_operation.rs flags both functions with AP-AUTH-001", () => {
+    const findings = scanFixture("vulnerable/auth_after_operation.rs");
+    const auth = findings.filter((f) => f.id === "AP-AUTH-001");
+
+    expect(auth).toHaveLength(2);
+    expect(auth.map((f) => f.location.function).sort()).toEqual([
+      "late_auth",
+      "no_auth",
+    ]);
+    expect(idsOf(findings)).toContain("AP-CALL-001");
+  });
 });
 
 describe("fixtures/safe", () => {
@@ -76,11 +88,22 @@ describe("fixtures/safe", () => {
   it("no_debug_statements.rs produces no findings", () => {
     expect(idsOf(scanFixture("safe/no_debug_statements.rs"))).toEqual([]);
   });
+
+  it("auth_gated.rs produces no findings", () => {
+    expect(idsOf(scanFixture("safe/auth_gated.rs"))).toEqual([]);
+  });
 });
 
 describe("fixtures/edge-cases", () => {
   it("comments_and_strings.rs produces no findings", () => {
     expect(idsOf(scanFixture("edge-cases/comments_and_strings.rs"))).toEqual([]);
+  });
+
+  it("auth_ordering.rs reports only the late-gated function", () => {
+    const findings = scanFixture("edge-cases/auth_ordering.rs");
+
+    expect(idsOf(findings)).toEqual(["AP-AUTH-001"]);
+    expect(findings[0]?.location.function).toBe("gated_last");
   });
 
   it("mixed_findings.rs lets multiple rules coexist", () => {
@@ -172,11 +195,14 @@ describe("finding quality across all fixtures", () => {
     "vulnerable/unvalidated_external_call.rs",
     "vulnerable/unprotected_upgrade.rs",
     "vulnerable/debug_statements.rs",
+    "vulnerable/auth_after_operation.rs",
     "safe/checked_arithmetic.rs",
     "safe/validated_external_call.rs",
     "safe/protected_upgrade.rs",
     "safe/no_debug_statements.rs",
+    "safe/auth_gated.rs",
     "edge-cases/comments_and_strings.rs",
+    "edge-cases/auth_ordering.rs",
     "edge-cases/mixed_findings.rs",
     "edge-cases/formatting_variants.rs",
     "edge-cases/nested_blocks.rs",

@@ -110,3 +110,139 @@ describe("AP-AUTH-001 authorization ordering", () => {
     expect(findings).toHaveLength(1);
   });
 });
+
+describe("AP-AUTH-001 realistic Soroban patterns", () => {
+  it("auth inside a nested block before the operation still gates it", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  if amount > 0 {",
+      "    env.require_auth(&to);",
+      "  }",
+      "  client.transfer(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    // Positional heuristic: the auth call appears before the operation in
+    // the body text, which is the documented (conservative-for-silence)
+    // behavior for nested blocks.
+    expect(MissingRequireAuthPlugin.scan(code)).toHaveLength(0);
+  });
+
+  it("operation inside a nested block before any auth is reported", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  if amount > 0 {",
+      "    client.transfer(&to, &amount);",
+      "  }",
+      "  env.require_auth(&to);",
+      "}",
+    ].join("\n");
+
+    const findings = MissingRequireAuthPlugin.scan(code);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("a commented-out require_auth does not gate anything", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  // env.require_auth(&to);  // TODO restore gating",
+      "  client.transfer(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    const findings = MissingRequireAuthPlugin.scan(code);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("require_auth text inside a string literal does not gate anything", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      '  let note = "call require_auth(&to) first";',
+      "  client.transfer(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    const findings = MissingRequireAuthPlugin.scan(code);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("an early sensitive operation is reported even when a later one is gated", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  client.transfer(&to, &amount);",
+      "  env.require_auth(&to);",
+      "  client.burn(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    // One finding per function: the first operation runs before any auth.
+    const findings = MissingRequireAuthPlugin.scan(code);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location.function).toBe("payout");
+  });
+
+  it("all operations gated when auth comes first", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  env.require_auth(&to);",
+      "  client.transfer(&to, &amount);",
+      "  client.burn(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    expect(MissingRequireAuthPlugin.scan(code)).toHaveLength(0);
+  });
+
+  it("documents the helper-function limitation: auth in a callee does not gate the caller", () => {
+    const code = [
+      "fn payout(env: Env, to: Address, amount: i128) {",
+      "  Self::authorize(&env, &to);",
+      "  client.transfer(&to, &amount);",
+      "}",
+    ].join("\n");
+
+    // Known limitation, not a bug: cross-function reasoning is not
+    // implemented, so a helper-based auth boundary is invisible and the
+    // finding fires. A correct broader location is preferred over guessing.
+    const findings = MissingRequireAuthPlugin.scan(code);
+    expect(findings).toHaveLength(1);
+  });
+
+  it("receiver-form admin.require_auth() gates subsequent operations", () => {
+    const code = [
+      "fn set_fee(env: Env, admin: Address, fee: u32) {",
+      "  admin.require_auth();",
+      "  env.storage().instance().set(&KEY_FEE, &fee);",
+      "}",
+    ].join("\n");
+
+    expect(MissingRequireAuthPlugin.scan(code)).toHaveLength(0);
+  });
+
+  it("fixtures: safe auth-gated file stays clean, vulnerable file reports precisely", () => {
+    const safe = fs.readFileSync(
+      path.join(ROOT, "fixtures", "safe", "auth_gated.rs"),
+      "utf-8",
+    );
+    const vulnerable = fs.readFileSync(
+      path.join(ROOT, "fixtures", "vulnerable", "auth_after_operation.rs"),
+      "utf-8",
+    );
+    const engine = () => new AuditEngine(createDefaultRegistry());
+
+    expect(engine().run(safe)).toEqual([]);
+
+    const findings = engine().run(vulnerable);
+    const auth = findings.filter((f) => f.id === "AP-AUTH-001");
+    const calls = findings.filter((f) => f.id === "AP-CALL-001");
+    expect(auth).toHaveLength(2);
+    expect(auth.map((f) => f.location.function).sort()).toEqual([
+      "late_auth",
+      "no_auth",
+    ]);
+    // late_auth has require_auth (albeit late), so only no_auth trips
+    // AP-CALL-001.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.location.function).toBe("no_auth");
+  });
+});
