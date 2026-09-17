@@ -63,6 +63,11 @@ never any cross-file dataflow. Known consequences:
 * `AP-ARITH-001` evaluates arithmetic line-by-line; checked math in a helper
   called from another line is not connected, and complex expression chains may
   be missed. It prefers silence over noise.
+* `AP-AUTH-001` is ordering-aware within a single function: a
+  `require_auth` only gates sensitive operations that appear after it, so a
+  check placed too late still produces a finding. It does not reason across
+  functions — a `require_auth` inside a helper does not gate the caller and
+  such a helper-based boundary is reported as unprotected.
 * `AP-CALL-001` accepts a `*_id` argument name or a `require_auth` call as a
   validation boundary; it does not verify the address is actually checked.
 * `AP-UPG-001` recognizes admin/upgrade functions by name, so unusual naming
