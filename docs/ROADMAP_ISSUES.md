@@ -29,7 +29,7 @@ Published as GitHub issues #9–#18 on 2026-09-17.
 | [#10](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/10) | Expression-level source locations (columns at the offending call, not just the `fn` keyword) | enhancement |
 | [#11](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/11) | Broaden the Soroban auth fixture matrix (receiver-form auth, multi-op functions, sub-contract calls) | enhancement, good first issue |
 | [#12](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/12) | Upgrade/admin detection beyond function-name matching (AP-UPG-001) | enhancement |
-| [#13](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/13) | AP-CALL-001: treat storage-resolved token/contract ids as a documented validation boundary tier | enhancement |
+| [#13](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/13) | ~~AP-CALL-001: treat storage-resolved token/contract ids as a documented validation boundary tier~~ — implemented in AP-008 (commits `7bb519c`–`57373ac`) | closed: completed |
 | [#14](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/14) | New rule candidate: unsafe integer casts/truncation on amount-like values | enhancement |
 | [#15](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/15) | New rule candidate: missing amount/range validation on deposits and withdrawals | enhancement |
 | [#16](https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues/16) | Contributor documentation: CONTRIBUTING.md and a rule-authoring guide | documentation, good first issue |
