@@ -137,6 +137,12 @@ describe("fixtures/edge-cases", () => {
     expect(findings).toEqual([]);
   });
 
+  it("storage_resolved_token.rs keeps the admin-gated storage pattern clean", () => {
+    // GitHub issue #13's motivating pattern: storage-resolved target in a
+    // well-written (admin-gated) contract must not be flagged.
+    expect(idsOf(scanFixture("safe/storage_resolved_token.rs"))).toEqual([]);
+  });
+
   it("auth_ordering.rs reports only the late-gated function", () => {
     const findings = scanFixture("edge-cases/auth_ordering.rs");
 
