@@ -38,6 +38,15 @@ describe("fixtures/vulnerable", () => {
     expect(idsOf(findings)).toContain("AP-CALL-001");
   });
 
+  it("unchecked_id_external_call.rs triggers the user-supplied tier", () => {
+    const findings = scanFixture("vulnerable/unchecked_id_external_call.rs");
+    const calls = findings.filter((f) => f.id === "AP-CALL-001");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.confidence).toBe("medium");
+    expect(calls[0]?.message).toContain("token_id");
+  });
+
   it("unprotected_upgrade.rs triggers AP-UPG-001 twice", () => {
     const findings = scanFixture("vulnerable/unprotected_upgrade.rs");
     const upgrades = findings.filter((f) => f.id === "AP-UPG-001");
@@ -97,6 +106,35 @@ describe("fixtures/safe", () => {
 describe("fixtures/edge-cases", () => {
   it("comments_and_strings.rs produces no findings", () => {
     expect(idsOf(scanFixture("edge-cases/comments_and_strings.rs"))).toEqual([]);
+  });
+
+  it("call_validation_tiers.rs fires the storage tier exactly once", () => {
+    const findings = scanFixture("edge-cases/call_validation_tiers.rs");
+
+    const calls = findings.filter((f) => f.id === "AP-CALL-001");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.confidence).toBe("low");
+    expect(calls[0]?.message).toContain("storage");
+    expect(calls[0]?.location.function).toBe("storage_token");
+
+    // The storage tier describes what was unresolved in a function the rule
+    // already flags; it never grants silence, so auth co-fires there.
+    expect(idsOf(findings)).toContain("AP-AUTH-001");
+    // checked_token and no_tier contribute nothing else.
+    expect(findings.filter((f) => f.location.function === "checked_token")).toEqual([]);
+    expect(findings.filter((f) => f.location.function === "no_tier")).toEqual([]);
+  });
+
+  it("checked_id_external_call.rs stays silent once auth analysis is out of scope", () => {
+    const code = fs.readFileSync(
+      path.join(FIXTURES_ROOT, "safe", "checked_id_external_call.rs"),
+      "utf-8",
+    );
+    const findings = new AuditEngine(createDefaultRegistry()).run(code, {
+      disabledRules: ["AP-AUTH-001"],
+    });
+
+    expect(findings).toEqual([]);
   });
 
   it("auth_ordering.rs reports only the late-gated function", () => {
