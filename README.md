@@ -290,6 +290,22 @@ Total findings: 3 (1 critical, 2 high)
 
 ```
 
+## Contributing and roadmap
+
+Planned improvements are tracked as open technical issues, each with a
+description of what exists, what is missing, a proposed scope, and concrete
+acceptance criteria. These are maintainer-planned items derived from the
+codebase itself — new rule candidates, fixture coverage, configuration, and
+reporting enhancements.
+
+* Issue tracker: <https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues>
+* Roadmap overview: `docs/ROADMAP_ISSUES.md`
+* Issues labeled `good first issue` are scoped for a first contribution
+
+The issue drafts live in `scripts/issues/` with `scripts/publish-issues.mjs`
+to re-check or publish them (`node scripts/publish-issues.mjs` for a dry
+run; it skips titles that already exist, so it never creates duplicates).
+
 ## Development
 
 Built with TypeScript: Tree-sitter provides function structure, source-text pattern rules perform the checks, and Vitest tests it all.
