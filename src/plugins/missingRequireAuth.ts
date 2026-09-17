@@ -2,6 +2,16 @@ import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, functionLocation, sanitizeKeepLines } from "../utils/rust.js";
 
+/**
+ * Authorization-sensitive operations (token transfers, balance updates,
+ * ledger entry writes) whose exposure matters for AP-AUTH-001.
+ */
+const SENSITIVE_OP =
+  /client\.|\btransfer\b|\btransfer_from\b|\bburn\b|\bbump_arc\b|\bput_arc\b|\bdel_arc\b|\bget_arc\b|\.set\s*\(/;
+
+/** An explicit authorization check inside the function body. */
+const AUTH_CHECK = /require_auth(?:_for_args)?\s*\(/;
+
 export class MissingRequireAuthPlugin implements Rule, FunctionRule {
   id = "AP-AUTH-001";
   name = "Missing Require Auth";
@@ -17,33 +27,41 @@ export class MissingRequireAuthPlugin implements Rule, FunctionRule {
   /**
    * The engine passes functions extracted from raw source; comments and
    * string contents are blanked here so only executable text is judged.
+   *
+   * Ordering matters: an auth check only gates operations that execute
+   * after it. When the first sensitive operation appears before the first
+   * require_auth in the body, the operation runs unauthorized and the
+   * finding survives. A trailing require_auth does not retroactively gate
+   * it. This is a positional heuristic over the function body (AST-bounded
+   * when available): it cannot tie an auth call to specific arguments, and
+   * it does not reason about helper functions — a require_auth inside a
+   * callee is invisible here, which is documented as a limitation rather
+   * than guessed at.
    */
   scanFunction(fn: ScannedFunction): Vulnerability[] {
     const clean = sanitizeKeepLines(fn.body);
     const brace = clean.indexOf("{");
     const body = brace >= 0 ? clean.slice(brace) : clean;
 
-    const sensitive =
-      /client\.|\btransfer\b|\btransfer_from\b|\bburn\b|\bbump_arc\b|\bput_arc\b|\bdel_arc\b|\bget_arc\b|\.set\s*\(/.test(
-        body,
-      );
+    const sensitive = SENSITIVE_OP.exec(body);
     if (!sensitive) {
       return [];
     }
 
-    if (/require_auth(?:_for_args)?\s*\(/.test(body)) {
+    const auth = AUTH_CHECK.exec(body);
+    if (auth && auth.index < sensitive.index) {
       return [];
     }
 
     return [
       {
         id: "AP-AUTH-001",
-        message: `Authorization-sensitive operations in function '${fn.name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
+        message: `Authorization-sensitive operations in function '${fn.name}' are not gated by require_auth before they execute. Add env.require_auth(&...) ahead of the sensitive operation so only the intended account can invoke it.`,
         severity: "critical",
         confidence: "high",
         location: functionLocation(fn),
         remediation:
-          "Add env.require_auth(&account) for the account authorized to perform the sensitive operation.",
+          "Add env.require_auth(&account) before the sensitive operation, for the account authorized to perform it.",
       },
     ];
   }
