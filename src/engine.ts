@@ -1,5 +1,22 @@
 import type { Rule, RuleId, Vulnerability } from "./types";
 import type { RuleRegistry } from "./registry";
+import type { RustAstFunction } from "./parser/rust";
+import { extractRustFunctionsAst } from "./parser/rust.js";
+
+/**
+ * Optional capability for rules that analyze functions: scanning one parsed
+ * function at a time. Rules implementing this are handed the AST-extracted
+ * functions (parser-unavailable or malformed input falls back to their own
+ * source-text scan), so the tree is parsed once per file, not once per rule.
+ */
+export interface FunctionRule {
+  /** Scans one function; receives the AST-derived boundaries and body. */
+  scanFunction(fn: RustAstFunction): Vulnerability[];
+}
+
+export function isFunctionRule(rule: Rule): rule is Rule & FunctionRule {
+  return typeof (rule as Partial<FunctionRule>).scanFunction === "function";
+}
 
 /**
  * Runs registered rules over source code and aggregates their findings.
@@ -22,14 +39,39 @@ export class AuditEngine {
     return rule.scan(code).map((finding) => stampRuleId(rule, finding));
   }
 
-  /** Runs every registered rule over `code`, in registration order. */
+  /**
+   * Runs every registered rule over `code`, in registration order. Function
+   * rules receive the AST extraction (or their own fallback on malformed
+   * input); other rules receive the raw code as before.
+   */
   run(code: string): Vulnerability[] {
+    const astFunctions = extractRustFunctionsAst(code);
     const findings: Vulnerability[] = [];
     for (const rule of this.rules()) {
+      if (isFunctionRule(rule)) {
+        findings.push(...runFunctionRule(rule, code, astFunctions));
+        continue;
+      }
       findings.push(...this.runRule(rule.id, code));
     }
     return findings;
   }
+}
+
+/** Function rules run per-function when the AST is available, else fall back. */
+function runFunctionRule(
+  rule: Rule & FunctionRule,
+  code: string,
+  astFunctions: RustAstFunction[] | null,
+): Vulnerability[] {
+  if (astFunctions === null) {
+    return rule.scan(code).map((finding) => stampRuleId(rule, finding));
+  }
+  const findings: Vulnerability[] = [];
+  for (const fn of astFunctions) {
+    findings.push(...rule.scanFunction(fn).map((finding) => stampRuleId(rule, finding)));
+  }
+  return findings;
 }
 
 /** Ensures every finding reports the id of the rule that produced it. */

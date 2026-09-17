@@ -1,46 +1,55 @@
 import type { Rule, Vulnerability } from "../types";
+import type { RustAstFunction } from "../parser/rust";
+import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
-export class MissingRequireAuthPlugin implements Rule {
+export class MissingRequireAuthPlugin implements Rule, FunctionRule {
   id = "AP-AUTH-001";
   name = "Missing Require Auth";
   description =
     "Detects authorization-sensitive operations (token transfers, balance updates, ledger entry writes) in functions that never call env.require_auth()";
 
   scan(code: string): Vulnerability[] {
-    const findings: Vulnerability[] = [];
-    const fns = extractRustFunctions(sanitizeKeepLines(code));
+    return extractRustFunctions(sanitizeKeepLines(code)).flatMap((fn) =>
+      this.scanFunction(fn),
+    );
+  }
 
-    for (const fn of fns) {
-      const brace = fn.body.indexOf("{");
-      const body = brace >= 0 ? fn.body.slice(brace) : fn.body;
-      const sensitive =
-        /client\.|\btransfer\b|\btransfer_from\b|\bburn\b|\bbump_arc\b|\bput_arc\b|\bdel_arc\b|\bget_arc\b|\.set\s*\(/.test(
-          body,
-        );
-      if (!sensitive) {
-        continue;
-      }
+  /**
+   * The engine passes functions extracted from raw source; comments and
+   * string contents are blanked here so only executable text is judged.
+   */
+  scanFunction(fn: RustAstFunction): Vulnerability[] {
+    const clean = sanitizeKeepLines(fn.body);
+    const brace = clean.indexOf("{");
+    const body = brace >= 0 ? clean.slice(brace) : clean;
 
-      const authorized = /require_auth(?:_for_args)?\s*\(/.test(body);
-      if (!authorized) {
-        const name = /\bfn\s+(\w+)\s*\(/.exec(fn.body)?.[1] ?? "<anonymous>";
-        findings.push({
-          id: "AP-AUTH-001",
-          message: `Authorization-sensitive operations in function '${name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
-          severity: "critical",
-          confidence: "high",
-          location: {
-            line: fn.line,
-            function: name,
-          },
-          remediation:
-            "Add env.require_auth(&account) for the account authorized to perform the sensitive operation.",
-        });
-      }
+    const sensitive =
+      /client\.|\btransfer\b|\btransfer_from\b|\bburn\b|\bbump_arc\b|\bput_arc\b|\bdel_arc\b|\bget_arc\b|\.set\s*\(/.test(
+        body,
+      );
+    if (!sensitive) {
+      return [];
     }
 
-    return findings;
+    if (/require_auth(?:_for_args)?\s*\(/.test(body)) {
+      return [];
+    }
+
+    return [
+      {
+        id: "AP-AUTH-001",
+        message: `Authorization-sensitive operations in function '${fn.name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
+        severity: "critical",
+        confidence: "high",
+        location: {
+          line: fn.line,
+          function: fn.name,
+        },
+        remediation:
+          "Add env.require_auth(&account) for the account authorized to perform the sensitive operation.",
+      },
+    ];
   }
 }
 

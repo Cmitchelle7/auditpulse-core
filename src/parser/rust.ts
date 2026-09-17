@@ -82,6 +82,19 @@ export function extractFunctions(tree: import("tree-sitter").Tree): RustAstFunct
   return collectFunctions(tree.rootNode, []);
 }
 
+/**
+ * Convenience for rules: parse `code` and extract functions in one step.
+ * Returns null when the parser is unavailable or the tree has syntax
+ * errors, so callers can fall back to their source-text analysis.
+ */
+export function extractRustFunctionsAst(code: string): RustAstFunction[] | null {
+  const parsed = parseRust(code);
+  if (parsed === null || parsed.hasError) {
+    return null;
+  }
+  return extractFunctions(parsed.tree);
+}
+
 function collectFunctions(
   node: import("tree-sitter").SyntaxNode,
   out: RustAstFunction[],
@@ -104,11 +117,15 @@ function toAstFunction(node: import("tree-sitter").SyntaxNode): RustAstFunction 
     return null;
   }
 
+  // Anchor the reported line to the `fn` keyword: attributes sit outside the
+  // node, but `pub`/`const` share its first line, so the node start would
+  // usually agree — the token is exact in every case.
+  const fnToken = node.children.find((child) => child.type === "fn");
   const body = node.text;
   const open = body.indexOf("{");
   return {
     name: nameNode.text,
-    line: node.startPosition.row + 1,
+    line: (fnToken ?? node).startPosition.row + 1,
     endLine: node.endPosition.row + 1,
     body,
     bodyInner: open >= 0 ? body.slice(open + 1) : "",

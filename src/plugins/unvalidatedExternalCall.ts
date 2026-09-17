@@ -1,4 +1,6 @@
 import type { Rule, Vulnerability } from "../types";
+import type { RustAstFunction } from "../parser/rust";
+import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
 
 /**
@@ -10,37 +12,41 @@ import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
  * `env.require_auth()` counts as a boundary. `try_` results are not
  * considered a boundary on their own — callers must still prove the callee.
  */
-export class UnvalidatedExternalCallPlugin implements Rule {
+export class UnvalidatedExternalCallPlugin implements Rule, FunctionRule {
   id = "AP-CALL-001";
   name = "Unvalidated External Call";
   description =
     "Detects token-movement or admin-change operations against external token/contract clients where no address validation or require_auth appears in the function";
 
   scan(code: string): Vulnerability[] {
-    const findings: Vulnerability[] = [];
-    const fns = extractRustFunctions(sanitizeKeepLines(code));
+    return extractRustFunctions(sanitizeKeepLines(code)).flatMap((fn) =>
+      this.scanFunction(fn),
+    );
+  }
 
-    for (const fn of fns) {
-      const body = fn.bodyInner;
-      const sensitive =
-        /client\s*\.\s*(?:transfer|transfer_from|burn|mint|clawback|set_authorized|set_admin)\s*\(/.test(
-          body,
-        ) ||
-        /\b(?:transfer|transfer_from|burn|mint|clawback|set_authorized|set_admin)\s*\(/.test(
-          body,
-        );
+  /** The engine passes raw functions; sanitize before pattern matching. */
+  scanFunction(fn: RustAstFunction): Vulnerability[] {
+    const body = sanitizeKeepLines(fn.bodyInner);
+    const sensitive =
+      /client\s*\.\s*(?:transfer|transfer_from|burn|mint|clawback|set_authorized|set_admin)\s*\(/.test(
+        body,
+      ) ||
+      /\b(?:transfer|transfer_from|burn|mint|clawback|set_authorized|set_admin)\s*\(/.test(
+        body,
+      );
 
-      if (!sensitive) {
-        continue;
-      }
+    if (!sensitive) {
+      return [];
+    }
 
-      const hasAuth = /require_auth(?:_for_args)?\s*\(/.test(body);
-      const hasValidation =
-        /\b(?:\w+_id|token_id|contract_id)\b/.test(body) ||
-        /\.try_(?:transfer|burn|mint|clawback|set_authorized|set_admin)/.test(body);
+    const hasAuth = /require_auth(?:_for_args)?\s*\(/.test(body);
+    const hasValidation =
+      /\b(?:\w+_id|token_id|contract_id)\b/.test(body) ||
+      /\.try_(?:transfer|burn|mint|clawback|set_authorized|set_admin)/.test(body);
 
-      if (!hasAuth && !hasValidation) {
-        findings.push({
+    if (!hasAuth && !hasValidation) {
+      return [
+        {
           id: "AP-CALL-001",
           message: `Function '${fn.name}' performs a sensitive external/token operation with no address validation or require_auth boundary. Verify the target contract/address is validated before relying on the call.`,
           severity: "high",
@@ -48,11 +54,11 @@ export class UnvalidatedExternalCallPlugin implements Rule {
           location: { line: fn.line, function: fn.name },
           remediation:
             "Validate the external contract address and its returned values, and gate the operation with env.require_auth(&...), so only authorized parties can trigger the cross-contract interaction.",
-        });
-      }
+        },
+      ];
     }
 
-    return findings;
+    return [];
   }
 }
 

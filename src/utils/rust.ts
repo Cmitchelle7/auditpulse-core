@@ -51,6 +51,8 @@ export function sanitizeKeepLines(code: string): string {
 export interface RustFunction {
   /** 1-based line number of the `fn` keyword line. */
   line: number;
+  /** 1-based line number of the closing brace of the body. */
+  endLine: number;
   /** Function name. */
   name: string;
   /** Full source of the function, from the `fn` line through the closing brace. */
@@ -110,6 +112,7 @@ export function extractRustFunctions(code: string): RustFunction[] {
       const open = body.indexOf("{");
       fns.push({
         line: current.line,
+        endLine: i + 1,
         name: current.name,
         body,
         bodyInner: open >= 0 ? body.slice(open + 1) : "",

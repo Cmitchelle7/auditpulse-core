@@ -1,4 +1,6 @@
 import type { Rule, Vulnerability } from "../types";
+import type { RustAstFunction } from "../parser/rust";
+import type { FunctionRule } from "../engine.js";
 import { extractRustFunctions, removeComments } from "../utils/rust.js";
 
 /**
@@ -22,25 +24,29 @@ const AUTHORIZATION_CHECK =
  * recognizable authorization check. Detection is deliberately name-based so
  * ordinary state-changing functions are never reported.
  */
-export class UnprotectedUpgradePlugin implements Rule {
+export class UnprotectedUpgradePlugin implements Rule, FunctionRule {
   id = "AP-UPG-001";
   name = "Unprotected Upgrade";
   description =
     "Detects upgrade, migration, and admin-configuration functions that perform privileged changes without an obvious require_auth or admin check";
 
   scan(code: string): Vulnerability[] {
-    const findings: Vulnerability[] = [];
-    const fns = extractRustFunctions(removeComments(code));
+    return extractRustFunctions(removeComments(code)).flatMap((fn) =>
+      this.scanFunction(fn),
+    );
+  }
 
-    for (const fn of fns) {
-      if (!ADMIN_FUNCTION_NAME.test(fn.name)) {
-        continue;
-      }
-      if (AUTHORIZATION_CHECK.test(fn.bodyInner)) {
-        continue;
-      }
+  /** The engine passes raw functions; comments are stripped before matching. */
+  scanFunction(fn: RustAstFunction): Vulnerability[] {
+    if (!ADMIN_FUNCTION_NAME.test(fn.name)) {
+      return [];
+    }
+    if (AUTHORIZATION_CHECK.test(removeComments(fn.bodyInner))) {
+      return [];
+    }
 
-      findings.push({
+    return [
+      {
         id: "AP-UPG-001",
         message: `Function '${fn.name}' appears to upgrade or reconfigure the contract but contains no require_auth or admin check. Anyone able to invoke it could replace or reconfigure the contract.`,
         severity: "critical",
@@ -48,10 +54,8 @@ export class UnprotectedUpgradePlugin implements Rule {
         location: { line: fn.line, function: fn.name },
         remediation:
           "Gate the function behind an explicit authorization check, e.g. env.require_auth(&admin) after loading the stored admin, and emit an event for the administrative change.",
-      });
-    }
-
-    return findings;
+      },
+    ];
   }
 }
 

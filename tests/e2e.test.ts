@@ -16,6 +16,14 @@ const VULNERABLE = path.join(ROOT, "examples", "vulnerable_vault.rs");
 const SAFE = path.join(ROOT, "examples", "safe_vault.rs");
 const SAMPLE = path.join(ROOT, "contracts", "SampleVault.rs");
 
+/**
+ * Generous per-test ceiling. Each runCli spawns a fresh node process, which
+ * must load the native tree-sitter module (~0.9s); under parallel test
+ * workers that can stretch several times, so 30s is the safe budget. Local
+ * runs finish far faster.
+ */
+const E2E_TIMEOUT = 30_000;
+
 interface RunResult {
   status: number;
   stdout: string;
@@ -47,7 +55,7 @@ describe("end-to-end CLI flow", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Total findings: 0");
-  });
+  }, E2E_TIMEOUT);
 
   it("vulnerable demo contract exits 1 with human-readable findings", () => {
     const result = runCli(["scan", VULNERABLE]);
@@ -60,7 +68,7 @@ describe("end-to-end CLI flow", () => {
     expect(result.stdout).toContain("AP-UPG-001");
     expect(result.stdout).toContain("Remediation:");
     expect(result.stdout).toContain("Total findings:");
-  });
+  }, E2E_TIMEOUT);
 
   it("vulnerable demo produces valid SARIF with relative URIs and exit 1", () => {
     const result = runCli(["sarif", VULNERABLE]);
@@ -82,7 +90,7 @@ describe("end-to-end CLI flow", () => {
       expect(startLine).toBeGreaterThanOrEqual(1);
       expect(result_.message.text.length).toBeGreaterThan(10);
     }
-  });
+  }, E2E_TIMEOUT);
 
   it("vulnerable demo produces valid JSON with summary and exit 1", () => {
     const result = runCli(["scan", VULNERABLE, "--format", "json"]);
@@ -97,20 +105,20 @@ describe("end-to-end CLI flow", () => {
       expect(finding.location.file).not.toMatch(/\\/);
       expect(finding.location.line).toBeGreaterThan(0);
     }
-  });
+  }, E2E_TIMEOUT);
 
   it("JSON and SARIF modes preserve exit-code semantics", () => {
     expect(runCli(["scan", SAFE, "--format", "json"]).status).toBe(0);
     expect(runCli(["scan", SAFE, "--format", "sarif"]).status).toBe(0);
     expect(runCli(["scan", VULNERABLE, "--format", "sarif"]).status).toBe(1);
-  });
+  }, E2E_TIMEOUT);
 
   it("missing path exits 2 with an error message", () => {
     const result = runCli(["scan", "no/such/file.rs"]);
 
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("Path not found");
-  });
+  }, E2E_TIMEOUT);
 
   it("directory scan of fixtures finds issues in vulnerable fixtures only", () => {
     const result = runCli(["scan", path.join(ROOT, "fixtures", "vulnerable"), "--format", "json"]);
@@ -124,7 +132,7 @@ describe("end-to-end CLI flow", () => {
       // Every reported file lives under fixtures/vulnerable.
       expect(file.replace(/\\/g, "/")).toContain("fixtures/vulnerable/");
     }
-  });
+  }, E2E_TIMEOUT);
 });
 
 describe("performance check (no benchmarking framework)", () => {
@@ -141,11 +149,12 @@ describe("performance check (no benchmarking framework)", () => {
       const log = JSON.parse(runCli(["scan", fixturesDir, "--format", "json"]).stdout) as any;
       expect(log.summary.filesScanned).toBeGreaterThan(10);
 
-      // Generous ceiling: local runs finish in well under a second; CI
-      // machines get 30s of slack. Guards against accidental regressions
+      // Generous ceiling: local runs finish in a few seconds (the native
+      // tree-sitter module adds ~1s of process startup per CLI invocation);
+      // CI machines get 30s of slack. Guards against accidental regressions
       // (e.g. accidental O(n^2) rescans) without being flaky.
       expect(elapsedMs).toBeLessThan(30_000);
-      if (elapsedMs > 5_000) {
+      if (elapsedMs > 10_000) {
         console.warn(`scan took unexpectedly long: ${elapsedMs.toFixed(0)}ms`);
       }
     },
