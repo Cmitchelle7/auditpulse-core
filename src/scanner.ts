@@ -126,14 +126,15 @@ function scanFile(
   const code = fs.readFileSync(path.join(root, relPath), "utf-8");
   const findings: FileFinding[] = [];
 
-  for (const rule of engine.rules()) {
-    if (config.disabledRules.includes(rule.id)) continue;
-    for (const finding of engine.runRule(rule.id, code)) {
-      if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[config.minSeverity]) {
-        continue;
-      }
-      findings.push({ ...finding, file: displayPath });
+  // One pass over the file: the engine parses it once (or falls back to
+  // source-text extraction) and hands every rule the same structure, so no
+  // rule re-parses or re-extracts on its own. Disabled rules never run; the
+  // severity threshold filters the aggregated findings.
+  for (const finding of engine.run(code, { disabledRules: config.disabledRules })) {
+    if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[config.minSeverity]) {
+      continue;
     }
+    findings.push({ ...finding, file: displayPath });
   }
 
   return sortFindings(findings);

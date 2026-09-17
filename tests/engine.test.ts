@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { RuleRegistry, createDefaultRegistry } from "../src/registry";
 import { AuditEngine } from "../src/engine";
 import { removeComments } from "../src/utils/rust";
+import type { ScannedFunction } from "../src/types";
 
 /** Minimal rule used to probe registry and engine behavior. */
 function makeRule(id: string): {
@@ -121,6 +122,62 @@ describe("AuditEngine", () => {
     expect(() => engine.runRule("AP-NOPE-001", "fn f() {}")).toThrow(
       /Unknown rule id/,
     );
+  });
+
+  it("runs disabled rules never, and shares one extraction across function rules", () => {
+    let scanCalls = 0;
+    const probe = {
+      ...makeRule("AP-PROBE-001"),
+      scan: () => {
+        scanCalls++;
+        return [];
+      },
+    };
+    const engine = new AuditEngine(
+      new RuleRegistry().register(probe).register(makeRule("AP-PROBE-002")),
+    );
+
+    const findings = engine.run("fn f() {}", { disabledRules: ["AP-PROBE-001"] });
+
+    // Only the enabled rule reports; the disabled one never ran.
+    expect(findings.map((f) => f.id)).toEqual(["AP-PROBE-002"]);
+    expect(scanCalls).toBe(0);
+  });
+
+  it("keeps working when every rule is disabled", () => {
+    const engine = new AuditEngine(createDefaultRegistry());
+    const code = `
+      fn withdraw(env: Env, to: Address, amount: i128) {
+        client.transfer(&to, &amount);
+      }
+    `;
+
+    expect(
+      engine.run(code, {
+        disabledRules: createDefaultRegistry().all().map((rule) => rule.id),
+      }),
+    ).toEqual([]);
+  });
+
+  it("passes AST-derived function structure with precise positions to function rules", () => {
+    const seen: { name: string; line: number; column?: number; bodyLine: number }[] = [];
+    const probe = {
+      id: "AP-PROBE-001",
+      name: "Probe",
+      description: "probe",
+      scan: () => [],
+      scanFunction: (fn: ScannedFunction) => {
+        seen.push({ name: fn.name, line: fn.line, column: fn.column, bodyLine: fn.bodyLine });
+        return [];
+      },
+    };
+    const engine = new AuditEngine(new RuleRegistry().register(probe));
+
+    engine.run("\n  pub fn deposit(env: Env) { env.require_auth(&user); }");
+
+    expect(seen).toEqual([
+      { name: "deposit", line: 2, column: 7, bodyLine: 2 },
+    ]);
   });
 
   it("stamps findings whose id differs from the emitting rule", () => {

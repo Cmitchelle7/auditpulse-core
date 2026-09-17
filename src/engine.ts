@@ -39,14 +39,20 @@ export class AuditEngine {
   }
 
   /**
-   * Runs every registered rule over `code`, in registration order. Function
-   * rules receive the AST extraction (or their own fallback on malformed
-   * input); other rules receive the raw code as before.
+   * Runs every registered rule over `code`, in registration order. The file
+   * is parsed once and the extraction (or the fallback on malformed input)
+   * is shared by all function rules. Rules listed in `disabledRules` are not
+   * executed at all.
    */
-  run(code: string): Vulnerability[] {
+  run(
+    code: string,
+    options: { disabledRules?: readonly string[] } = {},
+  ): Vulnerability[] {
+    const disabled = new Set(options.disabledRules ?? []);
     const astFunctions = extractRustFunctionsAst(code);
     const findings: Vulnerability[] = [];
     for (const rule of this.rules()) {
+      if (disabled.has(rule.id)) continue;
       if (isFunctionRule(rule)) {
         findings.push(...runFunctionRule(rule, code, astFunctions));
         continue;
