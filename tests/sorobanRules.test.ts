@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
+import MissingRequireAuthPlugin from "../src/plugins/missingRequireAuth";
 import UncheckedArithmeticPlugin from "../src/plugins/uncheckedArithmetic";
 import UnvalidatedExternalCallPlugin from "../src/plugins/unvalidatedExternalCall";
 import UnprotectedUpgradePlugin from "../src/plugins/unprotectedUpgrade";
 import DebugStatementsPlugin from "../src/plugins/debugStatements";
+import { AuditEngine } from "../src/engine";
+import { createDefaultRegistry } from "../src/registry";
 import type { Vulnerability } from "../src/types";
 
 /**
@@ -343,5 +346,47 @@ describe("DebugStatementsPlugin (AP-DEBUG-001)", () => {
   it("ignores empty and non-Rust input", () => {
     expect(DebugStatementsPlugin.scan("")).toHaveLength(0);
     expect(DebugStatementsPlugin.scan("plain text")).toHaveLength(0);
+  });
+});
+
+describe("finding location precision", () => {
+  it("anchors AP-AUTH-001 to the fn keyword with a column when the AST is available", () => {
+    const code = [
+      "impl Vault {", // 1
+      "  #[contractimpl]", // 2: attributes must not shift the location
+      "  pub fn payout(env: Env, to: Address, amount: i128) {", // 3
+      "    let client = token::Client::new(&env, &token);",
+      "    client.transfer(&to, &amount);",
+      "  }",
+      "}",
+    ].join("\n");
+
+    // The engine feeds AST-extracted structure to function rules; a rule's
+    // standalone scan() is the text-only fallback.
+    const engine = new AuditEngine(createDefaultRegistry());
+    const findings = engine.run(code).filter((f) => f.id === "AP-AUTH-001");
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location).toEqual({
+      line: 3,
+      column: 7,
+      function: "payout",
+    });
+  });
+
+  it("keeps AP-UPG-001 function locations without inventing columns on malformed input", () => {
+    // Malformed source: extraction falls back to text, where no column is
+    // known and none may be fabricated.
+    const code = [
+      "impl Vault {", // 1: unclosed brace, tree has errors
+      "  fn upgrade(env: Env) { env.storage().set(&K, &v); }", // 2
+    ].join("\n");
+
+    const findings = UnprotectedUpgradePlugin.scan(code);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location.line).toBe(2);
+    expect(findings[0]?.location.column).toBeUndefined();
+    expect(findings[0]?.location.function).toBe("upgrade");
   });
 });

@@ -1,6 +1,6 @@
 import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
-import { extractRustFunctions, removeComments } from "../utils/rust.js";
+import { extractRustFunctions, functionLocation, removeComments } from "../utils/rust.js";
 
 /**
  * Recognizable administrative/upgrade entrypoints. Only function names in
@@ -50,7 +50,7 @@ export class UnprotectedUpgradePlugin implements Rule, FunctionRule {
         message: `Function '${fn.name}' appears to upgrade or reconfigure the contract but contains no require_auth or admin check. Anyone able to invoke it could replace or reconfigure the contract.`,
         severity: "critical",
         confidence: "medium",
-        location: { line: fn.line, function: fn.name },
+        location: functionLocation(fn),
         remediation:
           "Gate the function behind an explicit authorization check, e.g. env.require_auth(&admin) after loading the stored admin, and emit an event for the administrative change.",
       },

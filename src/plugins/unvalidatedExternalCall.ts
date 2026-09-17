@@ -1,6 +1,6 @@
 import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
-import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
+import { extractRustFunctions, functionLocation, sanitizeKeepLines } from "../utils/rust.js";
 
 /**
  * AP-CALL-001 — flags cross-contract / external invocations that perform a
@@ -50,7 +50,7 @@ export class UnvalidatedExternalCallPlugin implements Rule, FunctionRule {
           message: `Function '${fn.name}' performs a sensitive external/token operation with no address validation or require_auth boundary. Verify the target contract/address is validated before relying on the call.`,
           severity: "high",
           confidence: "low",
-          location: { line: fn.line, function: fn.name },
+          location: functionLocation(fn),
           remediation:
             "Validate the external contract address and its returned values, and gate the operation with env.require_auth(&...), so only authorized parties can trigger the cross-contract interaction.",
         },

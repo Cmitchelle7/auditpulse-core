@@ -1,6 +1,6 @@
 import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
-import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
+import { extractRustFunctions, functionLocation, sanitizeKeepLines } from "../utils/rust.js";
 
 /** Amount-like identifiers that may be attacker- or contract-relevant. */
 const AMOUNT_IDENTIFIER =
@@ -45,10 +45,9 @@ export class UncheckedArithmeticPlugin implements Rule, FunctionRule {
   scanFunction(fn: ScannedFunction): Vulnerability[] {
     const clean = sanitizeKeepLines(fn.body);
     // The signature is skipped (generic bounds like `T: Add + Sub` are not
-    // arithmetic), so realign body lines through the opening brace.
+    // arithmetic), so realign body lines through the opening brace. The
+    // brace line is known from the extraction, so no re-scan is needed.
     const open = clean.indexOf("{");
-    const braceOffset =
-      open >= 0 ? clean.slice(0, open).split("\n").length - 1 : 0;
     const bodyLines = (open >= 0 ? clean.slice(open + 1) : clean).split("\n");
 
     const findings: Vulnerability[] = [];
@@ -67,7 +66,7 @@ export class UncheckedArithmeticPlugin implements Rule, FunctionRule {
         severity: "medium",
         confidence: "medium",
         location: {
-          line: fn.line + braceOffset + i,
+          line: fn.bodyLine + i,
           function: fn.name,
         },
         remediation:

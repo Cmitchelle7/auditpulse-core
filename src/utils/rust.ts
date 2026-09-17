@@ -31,7 +31,7 @@ export function removeCommentsKeepLines(code: string): string {
     );
 }
 
-import type { ScannedFunction } from "../types";
+import type { ScannedFunction, SourceLocation } from "../types";
 
 /**
  * Blanks out the contents of string/char literals (keeping the quotes and
@@ -48,6 +48,17 @@ export function blankStringContents(code: string): string {
 /** Both steps above, for rules that scan per line. */
 export function sanitizeKeepLines(code: string): string {
   return blankStringContents(removeCommentsKeepLines(code));
+}
+
+/**
+ * Best available location for a finding anchored to a whole function: the
+ * `fn` keyword's line, plus its column when the AST provided one. Columns
+ * are never invented for text-fallback extractions.
+ */
+export function functionLocation(fn: ScannedFunction): SourceLocation {
+  return fn.column === undefined
+    ? { line: fn.line, function: fn.name }
+    : { line: fn.line, column: fn.column, function: fn.name };
 }
 
 /**

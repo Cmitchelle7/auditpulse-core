@@ -1,6 +1,6 @@
 import type { Rule, ScannedFunction, Vulnerability } from "../types";
 import type { FunctionRule } from "../engine.js";
-import { extractRustFunctions, sanitizeKeepLines } from "../utils/rust.js";
+import { extractRustFunctions, functionLocation, sanitizeKeepLines } from "../utils/rust.js";
 
 export class MissingRequireAuthPlugin implements Rule, FunctionRule {
   id = "AP-AUTH-001";
@@ -41,10 +41,7 @@ export class MissingRequireAuthPlugin implements Rule, FunctionRule {
         message: `Authorization-sensitive operations in function '${fn.name}' are not gated by require_auth. Add env.require_auth(&...) so only the intended account can invoke it.`,
         severity: "critical",
         confidence: "high",
-        location: {
-          line: fn.line,
-          function: fn.name,
-        },
+        location: functionLocation(fn),
         remediation:
           "Add env.require_auth(&account) for the account authorized to perform the sensitive operation.",
       },
