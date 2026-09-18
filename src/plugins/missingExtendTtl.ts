@@ -1,5 +1,6 @@
-﻿import type { Rule, Vulnerability } from "../types";
-import { removeComments } from "../utils/rust.js";
+﻿import type { Rule, ScannedFunction, Vulnerability } from "../types";
+import type { AstAwareRule } from "../engine.js";
+import { locateLine, removeComments } from "../utils/rust.js";
 
 type StorageKind = "persistent" | "temporary" | "instance";
 
@@ -98,13 +99,17 @@ function lineOf(src: string, index: number): number {
   return line;
 }
 
-export class MissingExtendTtlPlugin implements Rule {
+export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
   id = "AP-STORAGE-001";
   name = "Missing Extend TTL";
   description =
     "Detects ledger storage access (persistent/temporary/instance) that is never accompanied by a matching extend_ttl call, which risks silent data expiry. Persistent and temporary storage are checked per function and key; instance storage is contract-wide and has no key, so any extend_ttl on instance storage anywhere in the file covers every instance access.";
 
   scan(code: string): Vulnerability[] {
+    return this.scanCode(code, null);
+  }
+
+  scanCode(code: string, functions: ScannedFunction[] | null): Vulnerability[] {
     const src = removeComments(code);
     const spans = collectFunctions(src);
     if (spans.length === 0) return [];
@@ -187,6 +192,7 @@ export class MissingExtendTtlPlugin implements Rule {
               "medium",
               `Instance storage accessed in '${span.name}' is never extended anywhere in this contract; the whole instance entry can expire and every field reads back as None.`,
               "Call env.storage().instance().extend_ttl(threshold, extend_to) somewhere on every invocation path to keep the contract's instance storage alive.",
+              functions,
             ),
           );
           continue;
@@ -210,6 +216,7 @@ export class MissingExtendTtlPlugin implements Rule {
                 "low",
                 `The only extend_ttl for this ${access.kind} entry in '${span.name}' sits inside a conditional branch, so the entry expires on any path that skips it.`,
                 "Extend the entry unconditionally, or extend it on every branch that writes or reads it.",
+                functions,
               ),
             );
           }
@@ -227,6 +234,7 @@ export class MissingExtendTtlPlugin implements Rule {
               "medium",
               `'${span.name}' accesses ${access.kind} key ${access.key} but only extends a different key in the same storage; the accessed entry still expires and reads back as None.`,
               `Call env.storage().${access.kind}().extend_ttl(&<the accessed key>, threshold, extend_to) for the entry actually used here.`,
+              functions,
             ),
           );
           continue;
@@ -243,6 +251,7 @@ export class MissingExtendTtlPlugin implements Rule {
               ? `'${span.name}' accesses ${access.kind} storage but extends TTL on ${extensions[0]!.kind} storage instead; the ${access.kind} entry is never bumped and expires silently.`
               : `Ledger entries accessed in '${span.name}' are never bumped via extend_ttl; expired ${access.kind} entries read back as None.`,
             `After reading or writing ${access.kind} storage, call env.storage().${access.kind}().extend_ttl(...) for the same key to keep the entry alive.`,
+            functions,
           ),
         );
       }
@@ -258,13 +267,19 @@ export class MissingExtendTtlPlugin implements Rule {
     confidence: "low" | "medium" | "high",
     message: string,
     remediation: string,
+    functions: ScannedFunction[] | null,
   ): Vulnerability {
+    const line = lineOf(src, access.index);
+    const location = functions ? locateLine(functions, line) : { line, function: fn };
+    if (!("function" in location) || !location.function) {
+      (location as { line: number; function?: string }).function = fn;
+    }
     return {
       id: "AP-STORAGE-001",
       message,
       severity: "high",
       confidence,
-      location: { line: lineOf(src, access.index), function: fn },
+      location,
       remediation,
     };
   }
