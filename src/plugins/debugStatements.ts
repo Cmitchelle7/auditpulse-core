@@ -1,5 +1,6 @@
-import type { Rule, Vulnerability } from "../types";
-import { sanitizeKeepLines } from "../utils/rust.js";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
+import type { AstAwareRule } from "../engine.js";
+import { locateLine, sanitizeKeepLines } from "../utils/rust.js";
 
 /**
  * Development-only patterns that should not remain in production contract
@@ -10,13 +11,22 @@ import { sanitizeKeepLines } from "../utils/rust.js";
 const DEBUG_PATTERN =
   /\bconsole\s*\.\s*log\s*\(|\b(?:log|dbg|println|eprintln|print|eprint)!\s*\(/;
 
-export class DebugStatementsPlugin implements Rule {
+export class DebugStatementsPlugin implements Rule, AstAwareRule {
   id = "AP-DEBUG-001";
   name = "Debug Statements";
   description =
     "Detects debug/development-only output macros (log!, dbg!, println!) left in production contract code";
 
   scan(code: string): Vulnerability[] {
+    return this.scanCode(code, null);
+  }
+
+  /**
+   * Whole-file scan with the shared AST extraction: each finding keeps its
+   * own macro line, with the enclosing function and fn-keyword column
+   * attached when the extraction is available.
+   */
+  scanCode(code: string, functions: ScannedFunction[] | null): Vulnerability[] {
     const findings: Vulnerability[] = [];
     const lines = sanitizeKeepLines(code).split("\n");
 
@@ -32,7 +42,7 @@ export class DebugStatementsPlugin implements Rule {
         message: `Debug macro '${match[1]}!' found on line ${i + 1}; development-only output should not remain in production contract code.`,
         severity: "low",
         confidence: "high",
-        location: { line: i + 1 },
+        location: locateLine(functions, i + 1),
         remediation:
           "Remove the debug macro, or gate it behind #[cfg(any(test, feature = \"debug\"))] so it is compiled out of production builds.",
       });

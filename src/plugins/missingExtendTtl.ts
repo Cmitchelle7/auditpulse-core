@@ -21,6 +21,7 @@ interface Access {
 const INSTANCE_KEY = "@instance";
 const NEEDS_TTL = new Set(["set", "get", "update", "try_get"]);
 const EXTEND_METHODS = new Set(["extend_ttl", "extend_ttl_to_threshold"]);
+const BARE_IDENTIFIER = /^[A-Za-z_]\w*$/;
 
 const FN_HEAD = /\bfn\s+([A-Za-z_]\w*)\s*(?:<[^>{]*>)?\s*\(/g;
 const ACCESS =
@@ -59,6 +60,10 @@ function normalizeKey(raw: string): string {
     .replace(/\.clone\s*\(\s*\)/g, "")
     .replace(/\s+/g, "")
     .replace(/^&+/, "");
+}
+
+function isBareIdentifier(key: string): boolean {
+  return BARE_IDENTIFIER.test(key);
 }
 
 function collectFunctions(src: string): FnSpan[] {
@@ -103,7 +108,7 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
   id = "AP-STORAGE-001";
   name = "Missing Extend TTL";
   description =
-    "Detects ledger storage access (persistent/temporary/instance) that is never accompanied by a matching extend_ttl call, which risks silent data expiry. Persistent and temporary storage are checked per function and key; instance storage is contract-wide and has no key, so any extend_ttl on instance storage anywhere in the file covers every instance access.";
+    "Detects ledger storage access (persistent/temporary/instance) that is never accompanied by a matching extend_ttl call, which risks silent data expiry. Persistent and temporary storage are checked per function and key, with a variable-aliased extend_ttl key (e.g. a local resolved earlier in the function) treated as covering that function's accesses of the same kind. Instance storage is contract-wide and has no key, so any extend_ttl on instance storage anywhere in the file covers every instance access. A given storage kind+key is reported at most once per file, at its earliest uncovered access.";
 
   scan(code: string): Vulnerability[] {
     return this.scanCode(code, null);
@@ -141,7 +146,7 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
     // Instance storage has no key and is contract-wide in real Soroban: one
     // extend_ttl() call on instance storage anywhere in the file keeps the
     // whole instance entry alive, no matter which function reads or writes
-    // it. Persistent/temporary remain function+key scoped below.
+    // it. Persistent/temporary remain function-scoped below.
     let instanceExtendedAnywhere = false;
     for (const accesses of byFn.values()) {
       if (accesses.some((a) => a.kind === "instance" && EXTEND_METHODS.has(a.method))) {
@@ -150,6 +155,9 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
       }
     }
 
+    // Kind-only delegation: a function that calls a named helper which
+    // extends TTL for a given kind is covered for that kind, since we can't
+    // trace which key the helper actually extends across a call boundary.
     const helperExtends = new Map<string, Set<StorageKind>>();
     for (const [span, accesses] of byFn) {
       const kinds = new Set<StorageKind>();
@@ -160,6 +168,10 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
     }
 
     const findings: Vulnerability[] = [];
+    // Dedup is global across the file: the same (kind, key) uncovered entry
+    // is reported once, at its earliest access, even if multiple unrelated
+    // functions touch it without extending it.
+    const reported = new Set<string>();
 
     for (const [span, accesses] of byFn) {
       const body = src.slice(span.bodyStart, span.bodyEnd);
@@ -174,16 +186,24 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
       const extensions = accesses.filter(
         (a) => EXTEND_METHODS.has(a.method) && a.kind !== "instance",
       );
-      const reported = new Set<string>();
+
+      // A same-function extend_ttl whose key is a bare variable (not a
+      // literal path like DataKey::Foo) likely aliases a key resolved
+      // earlier (e.g. read from storage itself); we can't trace that
+      // statically, so treat it as covering the whole kind in this
+      // function rather than flagging a "different key" false positive.
+      const looseKinds = new Set<StorageKind>();
+      for (const e of extensions) {
+        if (isBareIdentifier(e.key)) looseKinds.add(e.kind);
+      }
 
       for (const access of accesses) {
         if (!NEEDS_TTL.has(access.method)) continue;
 
         if (access.kind === "instance") {
           if (instanceExtendedAnywhere) continue;
-          const dedupe = "instance";
-          if (reported.has(dedupe)) continue;
-          reported.add(dedupe);
+          if (reported.has("instance")) continue;
+          reported.add("instance");
           findings.push(
             this.finding(
               src,
@@ -199,6 +219,7 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
         }
 
         if (delegated.has(access.kind)) continue;
+        if (looseKinds.has(access.kind)) continue;
 
         const sameKind = extensions.filter((e) => e.kind === access.kind);
         const exact = sameKind.filter((e) => e.key === access.key);
@@ -270,9 +291,9 @@ export class MissingExtendTtlPlugin implements Rule, AstAwareRule {
     functions: ScannedFunction[] | null,
   ): Vulnerability {
     const line = lineOf(src, access.index);
-    const location = functions ? locateLine(functions, line) : { line, function: fn };
-    if (!("function" in location) || !location.function) {
-      (location as { line: number; function?: string }).function = fn;
+    const location = locateLine(functions, line);
+    if (location.function === undefined) {
+      location.function = fn;
     }
     return {
       id: "AP-STORAGE-001",

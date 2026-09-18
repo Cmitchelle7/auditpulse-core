@@ -31,6 +31,8 @@ export function removeCommentsKeepLines(code: string): string {
     );
 }
 
+import type { ScannedFunction, SourceLocation } from "../types";
+
 /**
  * Blanks out the contents of string/char literals (keeping the quotes and
  * line count) so patterns inside string text, e.g. `"a.unwrap()"`, are not
@@ -48,15 +50,49 @@ export function sanitizeKeepLines(code: string): string {
   return blankStringContents(removeCommentsKeepLines(code));
 }
 
-export interface RustFunction {
-  /** 1-based line number of the `fn` keyword line. */
-  line: number;
-  /** Function name. */
-  name: string;
-  /** Full source of the function, from the `fn` line through the closing brace. */
-  body: string;
-  /** Text after the opening brace of the body, closing brace included. */
-  bodyInner: string;
+/**
+ * Best available location for a finding anchored to a whole function: the
+ * `fn` keyword's line, plus its column when the AST provided one. Columns
+ * are never invented for text-fallback extractions.
+ */
+export function functionLocation(fn: ScannedFunction): SourceLocation {
+  return fn.column === undefined
+    ? { line: fn.line, function: fn.name }
+    : { line: fn.line, column: fn.column, function: fn.name };
+}
+
+/**
+ * The scanned function whose body contains the 1-based `line`, or null.
+ * Declarations cannot nest, so at most one function matches.
+ */
+function functionAtLine(
+  fns: ScannedFunction[],
+  line: number,
+): ScannedFunction | null {
+  for (const fn of fns) {
+    if (fn.bodyLine <= line && line <= fn.endLine) {
+      return fn;
+    }
+  }
+  return null;
+}
+
+/**
+ * Best location for a whole-file match on `line`: the line itself, plus the
+ * enclosing function's name and `fn`-keyword column when the AST extraction
+ * is available. Without it (null), only the line is reported.
+ */
+export function locateLine(
+  functions: ScannedFunction[] | null,
+  line: number,
+): SourceLocation {
+  const fn = functions === null ? null : functionAtLine(functions, line);
+  if (fn === null) {
+    return { line };
+  }
+  return fn.column === undefined
+    ? { line, function: fn.name }
+    : { line, column: fn.column, function: fn.name };
 }
 
 /**
@@ -64,9 +100,9 @@ export interface RustFunction {
  * function. `macro_rules!` blocks are skipped as a unit (brace-based, no
  * macro internals are parsed).
  */
-export function extractRustFunctions(code: string): RustFunction[] {
+export function extractRustFunctions(code: string): ScannedFunction[] {
   const lines = code.split("\n");
-  const fns: RustFunction[] = [];
+  const fns: ScannedFunction[] = [];
   let current: { line: number; name: string; body: string[]; depth: number } | null =
     null;
 
@@ -110,9 +146,11 @@ export function extractRustFunctions(code: string): RustFunction[] {
       const open = body.indexOf("{");
       fns.push({
         line: current.line,
+        endLine: i + 1,
         name: current.name,
         body,
         bodyInner: open >= 0 ? body.slice(open + 1) : "",
+        bodyLine: current.line + (open >= 0 ? body.slice(0, open).split("\n").length - 1 : 0),
       });
       current = null;
     }

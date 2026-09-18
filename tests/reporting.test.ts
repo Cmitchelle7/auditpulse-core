@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { renderJson } from "../src/reporting/json";
 import { renderSarif } from "../src/reporting/sarif";
+import { renderHuman } from "../src/reporting/human";
 import type { FileFinding } from "../src/scanner";
 import type { ScanReport } from "../src/scanner";
 
@@ -64,6 +65,23 @@ describe("JSON output", () => {
     expect(second.confidence).toBeUndefined();
     expect(second.remediation).toBeUndefined();
     expect(second.location["function"]).toBeUndefined();
+  });
+
+  it("preserves columns and function names when a rule provides them", () => {
+    const log = JSON.parse(
+      renderJson(
+        report([
+          finding({ file: "a.rs", location: { line: 12, column: 5, function: "withdraw" } }),
+        ]),
+      ),
+    ) as any;
+
+    expect(log.findings[0].location).toEqual({
+      file: "a.rs",
+      line: 12,
+      column: 5,
+      function: "withdraw",
+    });
   });
 
   it("is stable: identical scans produce identical output", () => {
@@ -146,6 +164,25 @@ describe("SARIF output", () => {
     expect(result.locations[0].physicalLocation.region.startLine).toBe(21);
   });
 
+  it("emits startColumn only when a rule verified it", () => {
+    const log = JSON.parse(
+      renderSarif(
+        report([
+          finding({ file: "a.rs", location: { line: 21, column: 7 } }),
+          finding({ file: "b.rs", location: { line: 4 } }),
+        ]),
+        { ruleDescriptions },
+      ),
+    ) as any;
+
+    const [withColumn, withoutColumn] = log.runs[0].results;
+    expect(withColumn.locations[0].physicalLocation.region).toEqual({
+      startLine: 21,
+      startColumn: 7,
+    });
+    expect(withoutColumn.locations[0].physicalLocation.region).toEqual({ startLine: 4 });
+  });
+
   it("includes one rule entry per rule id and emits stable text", () => {
     const findings = [
       finding({ file: "a.rs" }),
@@ -161,6 +198,29 @@ describe("SARIF output", () => {
       "AP-DEBUG-001",
     ]);
     expect(renderSarif(report(findings), { ruleDescriptions })).toBe(text);
+  });
+});
+
+describe("human output", () => {
+  it("shows line:column and function names only when available", () => {
+    const out = renderHuman(
+      report([
+        finding({ file: "a.rs", location: { line: 21, column: 7, function: "withdraw" } }),
+        finding({
+          id: "AP-DEBUG-001",
+          severity: "low",
+          message: "Debug macro left in production code.",
+          file: "a.rs",
+          location: { line: 4 },
+        }),
+      ]),
+    );
+
+    expect(out).toContain("Line 21:7:");
+    expect(out).toContain("Function: withdraw");
+    // No column available: rendered as a bare line number, nothing fabricated.
+    expect(out).toContain("Line 4: [AP-DEBUG-001]");
+    expect(out).toContain("Total findings: 2");
   });
 });
 

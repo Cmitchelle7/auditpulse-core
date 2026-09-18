@@ -28,6 +28,7 @@ afterEach(() => {
 const VULNERABLE = `
   fn withdraw(env: Env, to: Address, amount: i128) {
     let client = token::Client::new(&env, &token_id);
+    assert!(token_id == &expected); // explicitly checked: AP-CALL-001 stays silent
     client.transfer(&to, &amount);
   }
 `;
@@ -167,6 +168,7 @@ describe("configuration", () => {
       `
       fn withdraw(env: Env, to: Address, amount: i128) {
         let client = token::Client::new(&env, &token_id);
+        assert!(token_id == &expected); // checked: only the auth finding remains
         client.transfer(&to, &amount);
       }
       fn log_it(env: Env) {

@@ -1,13 +1,24 @@
-import type { Rule, Vulnerability } from "../types";
-import { sanitizeKeepLines } from "../utils/rust.js";
+import type { Rule, ScannedFunction, Vulnerability } from "../types";
+import type { AstAwareRule } from "../engine.js";
+import { locateLine, sanitizeKeepLines } from "../utils/rust.js";
 
-export class UnwrapUsagePlugin implements Rule {
+export class UnwrapUsagePlugin implements Rule, AstAwareRule {
   id = "AP-ERROR-001";
   name = "Unwrap Usage";
   description =
     "Detects .unwrap(), .expect(), and panic!() calls in Soroban contracts; prefer returning Result<_, ContractError> instead";
 
   scan(code: string): Vulnerability[] {
+    return this.scanCode(code, null);
+  }
+
+  /**
+   * Whole-file scan with the shared AST extraction: findings still point at
+   * the panicking line, but the enclosing function and its fn-keyword column
+   * are attached when the extraction is available. Line numbers come from
+   * the sanitized text, whose layout matches the source.
+   */
+  scanCode(code: string, functions: ScannedFunction[] | null): Vulnerability[] {
     const findings: Vulnerability[] = [];
     // Comments and string contents are blanked (line layout preserved) so
     // `.unwrap()` inside a string literal or a comment is not reported.
@@ -34,9 +45,7 @@ export class UnwrapUsagePlugin implements Rule {
         message: `Direct use of ${kind} will panic and abort the contract invocation. Return Result<T, ContractError> and handle the error case instead.`,
         severity: "high",
         confidence: "high",
-        location: {
-          line: index + 1,
-        },
+        location: locateLine(functions, index + 1),
         remediation:
           "Replace the panicking call with error propagation, e.g. .ok_or(ContractError::X)?, so callers receive a Result instead of aborting the invocation.",
       });

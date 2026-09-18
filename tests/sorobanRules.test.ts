@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
+import MissingRequireAuthPlugin from "../src/plugins/missingRequireAuth";
 import UncheckedArithmeticPlugin from "../src/plugins/uncheckedArithmetic";
 import UnvalidatedExternalCallPlugin from "../src/plugins/unvalidatedExternalCall";
 import UnprotectedUpgradePlugin from "../src/plugins/unprotectedUpgrade";
 import DebugStatementsPlugin from "../src/plugins/debugStatements";
+import UnwrapUsagePlugin from "../src/plugins/unwrapUsage";
+import { AuditEngine } from "../src/engine";
+import { createDefaultRegistry } from "../src/registry";
 import type { Vulnerability } from "../src/types";
 
 /**
@@ -164,15 +168,28 @@ describe("UnvalidatedExternalCallPlugin (AP-CALL-001)", () => {
     expect(UnvalidatedExternalCallPlugin.scan(code)).toHaveLength(0);
   });
 
-  it("ignores calls carrying a validated token id argument", () => {
-    const code = `
+  it("ignores calls carrying an explicitly checked token id", () => {
+    // AP-008: validation is judged positionally and by evidence, not by the
+    // bare presence of an `*_id` name. A checked id before the call is a
+    // boundary; an unchecked one is reported at medium confidence.
+    const checked = `
+      fn sweep(env: Env, token_id: Address, to: Address, amount: i128) {
+        assert!(token_id == &expected_token);
+        let client = token::Client::new(&env, &token_id);
+        client.transfer(&env.current_contract_address(), &to, &amount);
+      }
+    `;
+    const unchecked = `
       fn sweep(env: Env, token_id: Address, to: Address, amount: i128) {
         let client = token::Client::new(&env, &token_id);
         client.transfer(&env.current_contract_address(), &to, &amount);
       }
     `;
 
-    expect(UnvalidatedExternalCallPlugin.scan(code)).toHaveLength(0);
+    expect(UnvalidatedExternalCallPlugin.scan(checked)).toHaveLength(0);
+    const findings = UnvalidatedExternalCallPlugin.scan(unchecked);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.confidence).toBe("medium");
   });
 
   it("ignores ordinary functions without external calls", () => {
@@ -343,5 +360,90 @@ describe("DebugStatementsPlugin (AP-DEBUG-001)", () => {
   it("ignores empty and non-Rust input", () => {
     expect(DebugStatementsPlugin.scan("")).toHaveLength(0);
     expect(DebugStatementsPlugin.scan("plain text")).toHaveLength(0);
+  });
+});
+
+describe("finding location precision", () => {
+  it("anchors AP-AUTH-001 to the fn keyword with a column when the AST is available", () => {
+    const code = [
+      "impl Vault {", // 1
+      "  #[contractimpl]", // 2: attributes must not shift the location
+      "  pub fn payout(env: Env, to: Address, amount: i128) {", // 3
+      "    let client = token::Client::new(&env, &token);",
+      "    client.transfer(&to, &amount);",
+      "  }",
+      "}",
+    ].join("\n");
+
+    // The engine feeds AST-extracted structure to function rules; a rule's
+    // standalone scan() is the text-only fallback.
+    const engine = new AuditEngine(createDefaultRegistry());
+    const findings = engine.run(code).filter((f) => f.id === "AP-AUTH-001");
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location).toEqual({
+      line: 3,
+      column: 7,
+      function: "payout",
+    });
+  });
+
+  it("keeps AP-UPG-001 function locations without inventing columns on malformed input", () => {
+    // Malformed source: extraction falls back to text, where no column is
+    // known and none may be fabricated.
+    const code = [
+      "impl Vault {", // 1: unclosed brace, tree has errors
+      "  fn upgrade(env: Env) { env.storage().set(&K, &v); }", // 2
+    ].join("\n");
+
+    const findings = UnprotectedUpgradePlugin.scan(code);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location.line).toBe(2);
+    expect(findings[0]?.location.column).toBeUndefined();
+    expect(findings[0]?.location.function).toBe("upgrade");
+  });
+
+  it("whole-file rules attach the enclosing function and fn column per finding", () => {
+    const code = [
+      "impl Vault {", // 1
+      "  fn balance(env: Env) -> i128 {", // 2
+      "    env.storage().persistent().get(&K).unwrap()", // 3
+      "  }", // 4
+      "", // 5
+      "  fn noisy(env: Env) {", // 6
+      "    dbg!(env);", // 7
+      "    env.storage().persistent().set(&K, &1);", // 8
+      "  }", // 9
+      "}", // 10
+    ].join("\n");
+
+    const engine = new AuditEngine(createDefaultRegistry());
+    const of = (id: string) => engine.run(code).filter((f) => f.id === id);
+
+    const error = of("AP-ERROR-001");
+    expect(error).toHaveLength(1);
+    expect(error[0]?.location).toEqual({ line: 3, column: 3, function: "balance" });
+
+    const debug = of("AP-DEBUG-001");
+    expect(debug).toHaveLength(1);
+    expect(debug[0]?.location).toEqual({ line: 7, column: 3, function: "noisy" });
+
+    // File-level TTL finding points at the first storage access, inside
+    // `balance`.
+    const storage = of("AP-STORAGE-001");
+    expect(storage).toHaveLength(1);
+    expect(storage[0]?.location).toEqual({ line: 3, column: 3, function: "balance" });
+  });
+
+  it("whole-file rules report line-only locations when the AST is unavailable", () => {
+    // The engine passes null on malformed input; scan() is the standalone
+    // text path. Either way no column or function may be fabricated.
+    const code = "fn broken( {\n  let x = opt.unwrap();\n";
+
+    const findings = UnwrapUsagePlugin.scan(code);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.location).toEqual({ line: 2 });
   });
 });
